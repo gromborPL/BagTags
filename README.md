@@ -4,6 +4,8 @@
 
 Additionally, BagTags features a custom, safe asynchronous sorting engine that completely fixes the native broken bag sorting functionality in Bagnon.
 
+![BagTags Inventory Overview](images/inventory.jpg)
+
 ---
 
 ## 🚀 Key Features
@@ -16,14 +18,22 @@ Additionally, BagTags features a custom, safe asynchronous sorting engine that c
     *   **[S] Soulbound:** Displays a subtle label over soulbound equipment items for easy gear progression tracking.
 *   **Bagnon Sorting Fix:** Features a native 3.3.5a asynchronous bag sorter that safely orders your backpack by rarity, type, and name without triggering interface locks.
 *   **Deep Auctionator Integration:** Seamlessly cross-references real-time 24-hour database prices, cutting out deposit risks automatically.
-*   **In-Game Configuration Panel:** Full graphical interface in the native WoW Options menu to toggle specific tags on or off.
-*   **Minimap Button:** A draggable minimap shortcut supporting Left-Click (Open Options) and Right-Click (Trigger Bag Sort).
 
 ---
 
-## 🛠️ Chat Commands
+## ⚙️ In-Game Configuration
 
-Type `/bg` or `/bagtags` followed by a sub-command to run real-time inventory audits directly in your chat frame:
+BagTags features a full graphical interface in the native WoW Options menu to easily toggle specific tags on or off to suit your playstyle. It also includes a draggable minimap shortcut supporting Left-Click (Open Options) and Right-Click (Trigger Bag Sort).
+
+![BagTags Configuration Panel](images/config.jpg)
+
+---
+
+## 🛠️ Chat Commands & Reports
+
+Type `/bg` or `/bagtags` followed by a sub-command to run real-time inventory audits directly in your chat frame. You can also view available features inside the dedicated in-game sub-panel.
+
+![BagTags Documentation and Reports](images/reports.jpg)
 
 | Command | Action |
 | :--- | :--- |
@@ -53,10 +63,14 @@ Type `/bg` or `/bagtags` followed by a sub-command to run real-time inventory au
 
 ---
 
-## 📝 License & Authors
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## 📝 Credits & Authors
 
 *   **Author:** grombor
 *   **Version:** 0.7.3
 *   *Feedback and bug reports are welcome via GitHub Issues or Discord!*
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
