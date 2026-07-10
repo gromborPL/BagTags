@@ -4,7 +4,7 @@
 
 Additionally, BagTags features a custom, safe asynchronous sorting engine that completely fixes the native broken bag sorting functionality in Bagnon.
 
-![BagTags Inventory Overview](images/inventory.jpg)
+![BagTags Inventory Overview](images/01.png)
 
 ---
 
@@ -25,7 +25,7 @@ Additionally, BagTags features a custom, safe asynchronous sorting engine that c
 
 BagTags features a full graphical interface in the native WoW Options menu to easily toggle specific tags on or off to suit your playstyle. It also includes a draggable minimap shortcut supporting Left-Click (Open Options) and Right-Click (Trigger Bag Sort).
 
-![BagTags Configuration Panel](images/config.jpg)
+![BagTags Configuration Panel](images/02.png)
 
 ---
 
@@ -33,7 +33,7 @@ BagTags features a full graphical interface in the native WoW Options menu to ea
 
 Type `/bg` or `/bagtags` followed by a sub-command to run real-time inventory audits directly in your chat frame. You can also view available features inside the dedicated in-game sub-panel.
 
-![BagTags Documentation and Reports](images/reports.jpg)
+![BagTags Documentation and Reports](images/03.png)
 
 | Command | Action |
 | :--- | :--- |
