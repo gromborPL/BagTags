@@ -63,6 +63,37 @@ Type `/bg` or `/bagtags` followed by a sub-command to run real-time inventory au
 
 ---
 
+## Dependencies
+
+This section contains information about the required add-ons and related libraries, along with frequently asked questions regarding their compatibility with the Project Ascension platform.
+
+### General Information
+To ensure proper functionality of modifications in the Project Ascension environment, it is required to have the assigned dependencies in the correct versions dedicated to this platform[cite: 7].
+
+---
+
+### Frequently Asked Questions (FAQ)
+
+#### 1. What are the required dependencies for the Auctionator add-on?
+The **Auctionator (Version: 2.9.9)** add-on, specifically modified for Ascension.gg, requires the following side modules to function properly[cite: 7]:
+* **Auctionator_Pricing_History** – responsible for saving price history and generating sales statistics[cite: 7, 8].
+* **Auctionator_Price_Database** – the main database storing information from auction house scans[cite: 7].
+
+#### 2. How do I know if the add-on versions are intended for Project Ascension?
+The versions listed below have been adapted to the server's unique mechanics (such as removing *Bloodforged* item tags or random suffixes)[cite: 7, 8]:
+* **Auctionator** — Version **2.9.9 (Ascension Modified)**[cite: 7]
+* *[Space for the second add-on / Main mod]* — Version **[Insert second add-on version] (Ascension Edition)**
+
+All official versions for Project Ascension feature appropriate code modifications (e.g., handling specific filters in the `Auctionator.lua` file) and modified `.toc` files tailored for the 3.3.5 game client (Interface: 30300) running on this server[cite: 7, 8].
+
+#### 3. Will older or standard WotLK versions of the Auctionator add-on work?
+It is not recommended to use standard versions of the Auctionator add-on for version 3.3.5a. The **2.9.9 version for Ascension** includes unique fixes (e.g., functions like `AUCTIONATOR_ROMOVE_BLOOFORGED` and `AUCTIONATOR_ROMOVE_SUFFIX`), without which the add-on may throw Lua errors when scanning unique equipment with variable stats[cite: 7, 8].
+
+#### 4. Are databases (SavedVariables) from standard WotLK compatible?
+Due to differences in item structures on Project Ascension, it is highly recommended to delete old database files (`AUCTIONATOR_PRICE_DATABASE`) before installing the dedicated version[cite: 7] to avoid conflicts when calculating suggested prices.
+
+---
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
