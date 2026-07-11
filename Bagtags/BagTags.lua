@@ -99,7 +99,7 @@ end
 local scanTooltip = CreateFrame("GameTooltip", "BagTagsScanTooltip", nil, "GameTooltipTemplate")
 scanTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
 
-local function IsItemSoulbound(bag, slot)
+function addonTable:IsItemSoulbound(bag, slot)
     scanTooltip:ClearLines()
     scanTooltip:SetBagItem(bag, slot)
     for i = 2, scanTooltip:NumLines() do

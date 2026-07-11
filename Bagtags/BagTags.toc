@@ -3,5 +3,5 @@
 ## Notes: Smart inventory management like AdiBags.
 ## SavedVariables: BagTagsConfig
 
-BagTags_Core.lua
+BagTags.lua
 BagTags_Inventory.lua
