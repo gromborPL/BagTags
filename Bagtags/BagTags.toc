@@ -1,0 +1,9 @@
+## Interface: 30300
+## Title: BagTags
+## Notes: Wizualne tagi w torbach (T/Q/S) oraz inteligentne sugestie sprzedaży (AH/Vendor) na bazie danych Auctionatora.
+## Version: 0.1.4
+## Author: grombor
+## SavedVariables: BagTagsConfig, BagTagsButtonPosition
+## OptionalDeps: Bagnon, Auctionator
+
+BagTags.lua
