@@ -1,244 +1,349 @@
 -- ============================================================================
--- BagTags_Inventory.lua
--- Niezależny moduł zarządzania ekwipunkiem w stylu AdiBags dla BagTags (Patch 3.3.5)
+-- KROK 8 (POPRAWKA FORMATOWANIA ZŁOTA I SZEROKOŚCI OKNA)
 -- ============================================================================
-
 local addonName, BT = ...
 BT.InventoryModule = {}
 
--- Domyślna konfiguracja w przestrzeni nazw addonu
-BT.Config = BT.Config or {}
-BT.Config.enabled = (BT.Config.enabled ~= nil) and BT.Config.enabled or true
-BT.Config.fontSize = BT.Config.fontSize or 10 -- Mniejsze literki dla tagów grup
-BT.Config.disabledTags = BT.Config.disabledTags or {}
+if not BagTagsCategoryState then 
+    BagTagsCategoryState = {} 
+end
+local knownItems = {}
 
--- ============================================================================
--- 1. TWORZENIE OKNA GŁÓWNEGO ("INVENTORY")
--- ============================================================================
-
-local mainFrame = CreateFrame("Frame", "BagTagsInventoryFrame", UIParent, "ButtonFrameTemplate")
-mainFrame:SetSize(450, 500)
+local mainFrame = CreateFrame("Frame", "BagTagsInventoryFrame", UIParent)
+-- Zwiększono szerokość okna do 420, aby 10 kolumn miało idealny margines
+mainFrame:SetSize(420, 520)
 mainFrame:SetPoint("CENTER", UIParent, "CENTER")
+mainFrame:SetFrameStrata("HIGH")
 mainFrame:SetMovable(true)
 mainFrame:EnableMouse(true)
 mainFrame:RegisterForDrag("LeftButton")
 mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
 mainFrame:SetScript("OnDragStop", mainFrame.StopMovingOrSizing)
+
+mainFrame:SetBackdrop({
+    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 }
+})
+mainFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+mainFrame:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
 mainFrame:Hide()
 
--- Ustawienie tytułu okna
-_G[mainFrame:GetName() .. "Title"]:SetText("Inventory")
+local title = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+title:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 15, -15)
+title:SetText("Backpack")
 
--- Przycisk sortowania w nagłówku okna
-local sortButton = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
-sortButton:SetSize(70, 22)
-sortButton:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -45, -40)
-sortButton:SetText("Sort")
-sortButton:SetScript("OnClick", function()
-    SortBags() -- Natywne sortowanie Blizzard API
-    BT.InventoryModule:UpdateLayout()
+local closeBtn = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
+closeBtn:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -5, -5)
+closeBtn:SetScript("OnClick", function() 
+    BT.InventoryModule:HideFrame() 
 end)
 
--- Kontener ze skrolowaniem na sekcje przedmiotów
 local scrollFrame = CreateFrame("ScrollFrame", "BagTagsInventoryScrollFrame", mainFrame, "UIPanelScrollFrameTemplate")
-scrollFrame:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 15, -75)
-scrollFrame:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -35, 15)
+scrollFrame:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -45)
+scrollFrame:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -30, 15)
 
 local contentFrame = CreateFrame("Frame", nil, scrollFrame)
-contentFrame:SetSize(400, 1)
+contentFrame:SetSize(380, 1)
 scrollFrame:SetScrollChild(contentFrame)
 
--- ============================================================================
--- 2. LOGIKA TAGOWANIA I KATEGORYZACJI
--- ============================================================================
+contentFrame.sections = {}
+local globalSlotCounter = 1
 
-local function GetItemTag(bag, slot)
-    local texture, itemCount, locked, quality, readable, lootable, itemLink = GetContainerItemInfo(bag, slot)
-    if not itemLink then return nil end
+-- NAPRAWIONA FUNKCJA: Poprawione kody kolorów z przedrostkiem |cff
+local function FormatMoney(amount)
+    if not amount or amount <= 0 then return "" end
+    local gold = math.floor(amount / 10000)
+    local silver = math.floor((amount % 10000) / 100)
+    local copper = amount % 100
     
-    local _, _, _, _, _, itemType = GetItemInfo(itemLink)
-    
-    -- Priorytet 1: Przedmioty zadań (Quest Items)
-    local isQuestItem = GetContainerItemQuestInfo(bag, slot)
-    if isQuestItem or itemType == "Quest" then
-        return "Quest Items"
+    local result = ""
+    if gold > 0 then
+        result = result .. gold .. "|cffffd700g|r "
     end
-    
-    -- Priorytet 2: Soulbound (Przedmioty przypisane)
-    -- Wykorzystujemy wbudowaną funkcję BagTags, jeśli istnieje, lub sprawdzamy status bindu
-    if BT.IsItemSoulbound and BT:IsItemSoulbound(bag, slot) then
-        return "Soulbound"
+    if silver > 0 or gold > 0 then
+        result = result .. silver .. "|cffc7c7c7s|r "
     end
-    
-    -- Pozostałe kategorie oparte na typie przedmiotu z gry
-    return itemType or "Miscellaneous"
+    if copper > 0 or result == "" then
+        result = result .. copper .. "|cffb87333c|r"
+    end
+    return result
 end
 
--- ============================================================================
--- 3. ALGORYTM UKŁADU I POZYCJONOWANIA GRUP (STYL ADIBAGS)
--- ============================================================================
+local function GetItemVendorPrice(bag, slot)
+    local link = GetContainerItemLink(bag, slot)
+    if not link then return 0 end
+    
+    local _, count = GetContainerItemInfo(bag, slot)
+    count = count or 1
+    
+    local price = 0
+    if GetSellValue then
+        price = GetSellValue(link) or 0
+    else
+        local _, _, _, _, _, _, _, _, _, _, itemSellPrice = GetItemInfo(link)
+        price = itemSellPrice or 0
+    end
+    
+    return price * count
+end
+
+local function GetSlotKey(bag, slot)
+    local link = GetContainerItemLink(bag, slot)
+    if not link then return nil end
+    local itemID = string.match(link, "item:(%d+)")
+    return string.format("%d_%d_%s", bag, slot, itemID or "0")
+end
+
+local function SnapshotCurrentItems()
+    table.wipe(knownItems)
+    for bag = 0, 4 do
+        local numSlots = GetContainerNumSlots(bag) or 0
+        for slot = 1, numSlots do
+            local key = GetSlotKey(bag, slot)
+            if key then 
+                knownItems[key] = true 
+            end
+        end
+    end
+end
+
+local function GetItemTag(bag, slot)
+    local link = GetContainerItemLink(bag, slot)
+    if not link then return nil end
+    
+    local key = GetSlotKey(bag, slot)
+    if key and not knownItems[key] then 
+        return "New Items" 
+    end
+
+    local _, _, _, _, _, itemClass = GetItemInfo(link)
+    
+    if itemClass == "Consumable" then 
+        return "Consumables" 
+    end
+    if itemClass == "Trade Goods" or itemClass == "Tradeskill" then 
+        return "Tradeskill" 
+    end
+    if itemClass == "Quest" then 
+        return "Quest" 
+    end
+
+    return itemClass or "Miscellaneous"
+end
+
+local function CustomItemButton_Update(slotFrame, bagID, slotID)
+    local texture, count = GetContainerItemInfo(bagID, slotID)
+    local iconTex = _G[slotFrame:GetName().."IconTexture"]
+    local countTex = _G[slotFrame:GetName().."Count"]
+    
+    if texture then 
+        iconTex:SetTexture(texture) 
+        iconTex:Show() 
+    else 
+        iconTex:Hide() 
+    end
+    
+    if count and count > 1 then 
+        countTex:SetText(count) 
+        countTex:Show() 
+    else 
+        countTex:Hide() 
+    end
+end
 
 function BT.InventoryModule:UpdateLayout()
-    if not BT.Config.enabled then mainFrame:Hide() return end
     if not mainFrame:IsShown() then return end
     
-    local groups = {}
+    for _, section in pairs(contentFrame.sections) do
+        section:Hide()
+        if section.slots then 
+            for _, slotFrame in pairs(section.slots) do 
+                slotFrame:Hide() 
+            end 
+        end
+    end
     
-    -- Skanowanie toreb (0 to główny plecak, 1-4 to dodatkowe torby)
+    local groups = {}
+    local categoryValues = {} 
+    local orderedCategories = { "New Items", "Consumables", "Tradeskill", "Quest", "Miscellaneous" }
+    
     for bag = 0, 4 do
-        for slot = 1, GetContainerNumSlots(bag) do
-            local tag = GetItemTag(bag, slot)
-            if tag and not BT.Config.disabledTags[tag] then
-                if not groups[tag] then groups[tag] = {} end
+        local numSlots = GetContainerNumSlots(bag) or 0
+        for slot = 1, numSlots do
+            if GetContainerItemLink(bag, slot) then
+                local tag = GetItemTag(bag, slot) or "Miscellaneous"
+                if not groups[tag] then 
+                    groups[tag] = {} 
+                    categoryValues[tag] = 0
+                end
                 table.insert(groups[tag], {bag = bag, slot = slot})
+                
+                local itemPrice = GetItemVendorPrice(bag, slot)
+                categoryValues[tag] = categoryValues[tag] + itemPrice
+                
+                local found = false
+                for _, name in ipairs(orderedCategories) do
+                    if name == tag then 
+                        found = true 
+                        break 
+                    end
+                end
+                if not found then 
+                    table.insert(orderedCategories, tag) 
+                    categoryValues[tag] = itemPrice
+                end
             end
         end
     end
     
-    -- Konwersja do listy indeksowanej w celu sortowania
-    local sortedGroups = {}
-    for tagName, items in pairs(groups) do
-        table.insert(sortedGroups, {name = tagName, items = items, count = #items})
-    end
+    local currentY = -10
+    local COLUMNS = 10 
+    local SLOT_SIZE = 37
     
-    -- Sortowanie grup według wytycznych użytkownika
-    table.sort(sortedGroups, function(a, b)
-        -- 1. Quest Items zawsze na samym początku (od prawego górnego rogu)
-        if a.name == "Quest Items" then return true end
-        if b.name == "Quest Items" then return false end
+    for _, catName in ipairs(orderedCategories) do
+        local itemDataList = groups[catName]
+        local count = itemDataList and #itemDataList or 0
         
-        -- 2. Soulbound zawsze na drugim miejscu
-        if a.name == "Soulbound" then return true end
-        if b.name == "Soulbound" then return false end
-        
-        -- 3. Reszta sortowana malejąco po największej liczebności przedmiotów
-        return a.count > b.count
-    end)
-    
-    -- Czyszczenie i rysowanie layoutu w oknie
-    if not contentFrame.sections then contentFrame.sections = {} end
-    for _, section in pairs(contentFrame.sections) do section:Hide() end
-    
-    -- Kotwiczenie sekcji: Zaczynamy od prawej strony od góry (TOPRIGHT)
-    local startX, startY = -10, -10
-    local currentY = startY
-    
-    for i, groupData in ipairs(sortedGroups) do
-        local section = contentFrame.sections[groupData.name]
-        if not section then
-            section = CreateFrame("Frame", nil, contentFrame)
+        if count > 0 then
+            local section = contentFrame.sections[catName]
             
-            -- Konfiguracja napisu Taga (mniejsza czcionka)
-            local title = section:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            title:SetFont("Fonts\\FRIZQT__.TTF", BT.Config.fontSize, "OUTLINE")
-            title:SetPoint("TOPLEFT", section, "TOPLEFT", 0, 0)
-            section.title = title
+            if not section then
+                section = CreateFrame("Frame", nil, contentFrame)
+                section.slots = {}
+                
+                local header = CreateFrame("Button", nil, section)
+                header:SetSize(380, 20)
+                header:SetPoint("TOPLEFT", section, "TOPLEFT", 0, 0)
+                
+                local fontString = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                fontString:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+                fontString:SetPoint("LEFT", header, "LEFT", 2, 0)
+                header.text = fontString
+                
+                header:SetScript("OnClick", function()
+                    BagTagsCategoryState[catName] = not BagTagsCategoryState[catName]
+                    BT.InventoryModule:UpdateLayout()
+                end)
+                
+                local highlight = header:CreateTexture(nil, "HIGHLIGHT")
+                highlight:SetAllPoints()
+                highlight:SetTexture(1, 1, 1, 0.1)
+                
+                section.header = header
+                contentFrame.sections[catName] = section
+            end
             
-            contentFrame.sections[groupData.name] = section
+            local isCollapsed = BagTagsCategoryState[catName]
+            local prefix = ""
+            if isCollapsed then
+                prefix = "[+] "
+            else
+                prefix = "[-] "
+            end
+            
+            if catName == "New Items" then 
+                section.header.text:SetTextColor(0, 1, 0.5)
+            elseif isCollapsed then 
+                section.header.text:SetTextColor(0.6, 0.6, 0.6)
+            else 
+                section.header.text:SetTextColor(1, 0.82, 0) 
+            end
+            
+            local goldText = ""
+            local totalValue = categoryValues[catName] or 0
+            if totalValue > 0 then
+                goldText = "  |cff808080(Vendor: " .. FormatMoney(totalValue) .. ")|r"
+            end
+            
+            section.header.text:SetText(prefix .. catName .. " (" .. count .. ")" .. goldText)
+            
+            section:ClearAllPoints()
+            section:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 10, currentY)
+            section:Show()
+            
+            local sectionHeight = 20
+            if not isCollapsed then
+                for index, itemInfo in ipairs(itemDataList) do
+                    local slotFrame = section.slots[index]
+                    if not slotFrame then
+                        local slotName = "BagTagsSlotButton_" .. globalSlotCounter
+                        globalSlotCounter = globalSlotCounter + 1
+                        slotFrame = CreateFrame("Button", slotName, section, "ContainerFrameItemButtonTemplate")
+                        section.slots[index] = slotFrame
+                    end
+                    
+                    slotFrame:SetID(itemInfo.slot)
+                    local parentFrame = slotFrame:GetParent()
+                    parentFrame:SetID(itemInfo.bag)
+                    
+                    local row = math.floor((index - 1) / COLUMNS)
+                    local col = (index - 1) % COLUMNS
+                    
+                    slotFrame:ClearAllPoints()
+                    slotFrame:SetPoint("TOPLEFT", section, "TOPLEFT", col * SLOT_SIZE, -(20 + (row * SLOT_SIZE)))
+                    slotFrame:SetSize(34, 34)
+                    
+                    CustomItemButton_Update(slotFrame, itemInfo.bag, itemInfo.slot)
+                    
+                    local iconTex = _G[slotFrame:GetName().."IconTexture"]
+                    if iconTex then 
+                        iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92) 
+                    end
+                    slotFrame:Show()
+                end
+                local totalRows = math.ceil(count / COLUMNS)
+                sectionHeight = 22 + (totalRows * SLOT_SIZE)
+            end
+            section:SetSize(380, sectionHeight)
+            currentY = currentY - (sectionHeight + 10)
         end
-        
-        section.title:SetText(groupData.name)
-        section:ClearAllPoints()
-        
-        -- Ustawienie pozycji sekcji w oknie (układ kolumnowy/rzędowy od prawej)
-        section:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", startX, currentY)
-        
-        -- Kalkulacja wysokości sekcji na podstawie liczby ikonek
-        local rows = math.ceil(groupData.count / 4) -- Maksymalnie 4 ikonki w rzędzie grupy
-        local sectionHeight = 20 + (rows * 39)       -- Margines tytułu + wielkość slotów
-        section:SetSize(160, sectionHeight)
-        section:Show()
-        
-        -- Przesunięcie w dół dla kolejnej grupy tagów
-        currentY = currentY - (sectionHeight + 15)
     end
-    
-    -- Dopasowanie wysokości kontenera skrolla
     contentFrame:SetHeight(math.abs(currentY))
 end
 
--- ============================================================================
--- 4. OBSŁUGA ZDARZEŃ GIER I HOOKOWANIE PLECAKA
--- ============================================================================
+function BT.InventoryModule:ShowFrame() 
+    mainFrame:Show() 
+    self:UpdateLayout() 
+end
+
+function BT.InventoryModule:HideFrame() 
+    mainFrame:Hide() 
+    SnapshotCurrentItems() 
+end
+
+function BT.InventoryModule:ToggleFrame() 
+    if mainFrame:IsShown() then 
+        self:HideFrame() 
+    else 
+        self:ShowFrame() 
+    end 
+end
+
+local function CloseBlizz()
+    for id = 1, 5 do
+        local frame = _G["ContainerFrame"..id]
+        if frame then
+            frame:Hide()
+        end
+    end
+end
+
+hooksecurefunc("OpenAllBags", function() CloseBlizz() BT.InventoryModule:ShowFrame() end)
+hooksecurefunc("OpenBackpack", function() CloseBlizz() BT.InventoryModule:ShowFrame() end)
+hooksecurefunc("ToggleBag", function() CloseBlizz() BT.InventoryModule:ToggleFrame() end)
+hooksecurefunc("CloseAllBags", function() BT.InventoryModule:HideFrame() end)
+hooksecurefunc("CloseBackpack", function() BT.InventoryModule:HideFrame() end)
+
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("PLAYER_LOGIN")
+initFrame:SetScript("OnEvent", function() table.wipe(knownItems) end)
 
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("BAG_UPDATE")
-eventFrame:SetScript("OnEvent", function(self, event, ...)
-    if event == "BAG_UPDATE" and mainFrame:IsShown() then
-        BT.InventoryModule:UpdateLayout()
-    end
-end)
-
--- Podmiana standardowych funkcji Blizzarda otwierających torby
-ToggleBackpack = function()
-    if not BT.Config.enabled then
-        -- Jeśli nasz moduł jest wyłączony w menu, przywróć standardowe zachowanie gry
-        if BackpackTokenFrame then ToggleBag(0) end
-        return
-    end
-
+eventFrame:SetScript("OnEvent", function() 
     if mainFrame:IsShown() then 
-        mainFrame:Hide() 
-    else 
-        mainFrame:Show() 
         BT.InventoryModule:UpdateLayout() 
-    end
-end
-ToggleBag = function(bagID) ToggleBackpack() end
-OpenAllBags = ToggleBackpack
-
--- ============================================================================
--- 5. REJESTRACJA I INTEGRACJA W NATIVE OPTIONS PANEL (FIXED)
--- ============================================================================
-
-local function InjectInventoryOptions()
-    -- Pobieramy panel główny stworzony w Core.lua
-    local mainOptionsPanel = _G["BagTagsOptionsPanel"]
-    
-    if mainOptionsPanel then
-        -- Tworzymy dedykowany podpanel dla trybu Inventory (AdiBags)
-        local invPanel = CreateFrame("Frame", "BagTagsInventoryOptionsPanel", UIParent)
-        invPanel.name = "Inventory (AdiBags)"
-        invPanel.parent = mainOptionsPanel.name -- Podpięcie jako dziecko pod główne "BagTags"
-
-        local subTitle = invPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-        subTitle:SetPoint("TOPLEFT", 16, -16)
-        subTitle:SetText("BagTags: Inventory Configuration")
-
-        -- 1. Checkbox włączający cały moduł
-        local cbEnable = CreateFrame("CheckButton", "BagTags_Inventory_EnableCB", invPanel, "InterfaceOptionsCheckButtonTemplate")
-        cbEnable:SetPoint("TOPLEFT", 20, -50)
-        _G[cbEnable:GetName() .. "Text"]:SetText("|cffffffffWłącz niezależne okno Inventory (AdiBags Mode)|r")
-        
-        cbEnable:SetScript("OnShow", function(self) self:SetChecked(BT.Config.enabled) end)
-        cbEnable:SetScript("OnClick", function(self)
-            BT.Config.enabled = not not self:GetChecked()
-            if not BT.Config.enabled then BagTagsInventoryFrame:Hide() end
-        end)
-
-        -- 2. Suwak wielkości czcionki tagów grup
-        local sliderFont = CreateFrame("Slider", "BagTags_Inventory_FontSlider", invPanel, "OptionsSliderTemplate")
-        sliderFont:SetPoint("TOPLEFT", 20, -100)
-        sliderFont:SetMinMaxValues(8, 14)
-        sliderFont:SetValueStep(1)
-        _G[sliderFont:GetName() .. "Text"]:SetText("Wielkość czcionki tagów grup")
-        _G[sliderFont:GetName() .. "Low"]:SetText("8")
-        _G[sliderFont:GetName() .. "High"]:SetText("14")
-        
-        sliderFont:SetScript("OnShow", function(self) self:SetValue(BT.Config.fontSize) end)
-        sliderFont:SetScript("OnValueChanged", function(self, value)
-            BT.Config.fontSize = math.floor(value)
-            BT.InventoryModule:UpdateLayout()
-        end)
-
-        -- Rejestracja podkategorii w menu Blizzarda
-        InterfaceOptions_AddCategory(invPanel)
-    end
-end
-
--- Bezpieczna inicjalizacja opcji po pełnym załadowaniu interfejsu
-local loader = CreateFrame("Frame")
-loader:RegisterEvent("PLAYER_LOGIN")
-loader:SetScript("OnEvent", function()
-    InjectInventoryOptions()
+    end 
 end)

@@ -1,7 +1,9 @@
 ## Interface: 30300
-## Title: BagTags
-## Notes: Smart inventory management like AdiBags.
-## SavedVariables: BagTagsConfig
+## Title: |cff00ffccBagTags|r
+## Notes: |cffffd100Advanced real-time category sorting and smart inventory overlay.|r
+## Author: |cff00ff00grombor|r
+## Version: 0.7.3
+## SavedVariables: BagTagsConfig, BagTagsButtonPosition
 
-BagTags.lua
 BagTags_Inventory.lua
+BagTags.lua

@@ -1,90 +1,180 @@
--- BagTags v0.7.3 (Text Wrapping & Multi-Panel Fixed Layout)
-local ADDON_NAME, addonTable = ...
+-- ============================================================================
+-- INTEGRACJA Z SYSTEMEM TAGOWANIA BAGTAGS + MODERN SCROLL & QUEST FIX
+-- ============================================================================
+local addonName, BT = ...
+BT.InventoryModule = {}
 
--- 1. VARIABLES AND TAG CONFIGURATION
-local GRAY_QUALITY = 0
-local UNCOMMON_QUALITY = 2
-local RARE_QUALITY = 3
+if not BagTagsCategoryState then 
+    BagTagsCategoryState = {} 
+end
+local knownItems = {}
 
-local SOULBOUND_BORDER_COLOR = { r = 0.53, g = 0.12, b = 0.77, a = 1 } 
-local SOULBOUND_LABEL_COLOR  = { r = 0.90, g = 0.60, b = 1.0, a = 1 }
-local QUEST_BORDER_COLOR = { r = 1, g = 0.9, b = 0.1, a = 1 }
-local QUEST_LABEL_COLOR  = { r = 1, g = 0.95, b = 0.4, a = 1 }
-local AH_BORDER_COLOR    = { r = 0.1, g = 1, b = 0.1, a = 1 }
-local AH_LABEL_COLOR     = { r = 0.4, g = 1, b = 0.4, a = 1 }
-local VEND_BORDER_COLOR  = { r = 0.9, g = 0.8, b = 0.2, a = 1 }
-local VEND_LABEL_COLOR   = { r = 1, g = 0.9, b = 0.4, a = 1 }
-local DE_BORDER_COLOR    = { r = 0.8, g = 0.3, b = 0.8, a = 1 }
-local DE_LABEL_COLOR     = { r = 1.0, g = 0.5, b = 1.0, a = 1 }
+local mainFrame = CreateFrame("Frame", "BagTagsInventoryFrame", UIParent)
+mainFrame:SetSize(420, 520)
+mainFrame:SetPoint("CENTER", UIParent, "CENTER")
+mainFrame:SetFrameStrata("HIGH")
+mainFrame:SetMovable(true)
+mainFrame:EnableMouse(true)
+mainFrame:RegisterForDrag("LeftButton")
+mainFrame:SetScript("OnDragStart", mainFrame.StartMoving)
+mainFrame:SetScript("OnDragStop", mainFrame.StopMovingOrSizing)
 
-local FONT_PATH = "Fonts\\FRIZQT__.TTF"
-local FONT_SIZE = 16
-local FONT_FLAGS = "THICKOUTLINE"
+mainFrame:SetBackdrop({
+    bgFile = "Interface\\ChatFrame\\ChatFrameBackground",
+    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    tile = true, tileSize = 16, edgeSize = 16,
+    insets = { left = 4, right = 4, top = 4, bottom = 4 }
+})
+mainFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
+mainFrame:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
+mainFrame:Hide()
 
-local configFrame = CreateFrame("Frame")
-configFrame:RegisterEvent("ADDON_LOADED")
-configFrame:SetScript("OnEvent", function(self, event, addon)
-    if addon == ADDON_NAME then
-        if not BagTagsConfig then
-            BagTagsConfig = { showVendor = true, showQuest = true, showSoulbound = true, showMarket = true, showDisenchant = true }
-        end
-        if not BagTagsButtonPosition then BagTagsButtonPosition = 190 end
-        self:UnregisterEvent("ADDON_LOADED")
-    end
+local title = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+title:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 15, -15)
+title:SetText("Backpack")
+
+local closeBtn = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
+closeBtn:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -5, -5)
+closeBtn:SetScript("OnClick", function() 
+    BT.InventoryModule:HideFrame() 
 end)
 
--- HELPER FUNCTIONS
-local function HasEnchanting()
-    for i = 1, GetNumSkillLines() do
-        local skillName = GetSkillLineInfo(i)
-        if skillName == "Enchanting" or skillName == "Zaklinanie" then return true end
-    end
-    return false
+-- Kontener na zawartość torby
+local scrollFrame = CreateFrame("ScrollFrame", "BagTagsInventoryScrollFrame", mainFrame)
+scrollFrame:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -45)
+scrollFrame:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -30, 15)
+
+local contentFrame = CreateFrame("Frame", nil, scrollFrame)
+contentFrame:SetSize(355, 1)
+scrollFrame:SetScrollChild(contentFrame)
+
+-- MINIMALISTYCZNY, NOWOCZESNY SUWAK
+local customScrollBar = CreateFrame("Slider", "BagTagsInventoryCustomScrollBar", mainFrame)
+customScrollBar:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -10, -55)
+customScrollBar:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 25)
+customScrollBar:SetWidth(4) -- Bardzo cienki, nowoczesny pasek
+customScrollBar:SetOrientation("VERTICAL")
+customScrollBar:SetMinMaxValues(0, 0)
+customScrollBar:SetValue(0)
+customScrollBar:SetValueStep(1)
+
+-- Tło suwaka (delikatna, ciemna linia prowadząca)
+customScrollBar:SetBackdrop({
+    bgFile = "Interface\\Buttons\\WHITE8x8",
+    insets = { left = 0, right = 0, top = 0, bottom = 0 }
+})
+customScrollBar:SetBackdropColor(1, 1, 1, 0.05)
+
+-- Nowoczesny, zaokrąglony i półprzezroczysty uchwyt suwaka
+local thumb = customScrollBar:CreateTexture(nil, "ARTWORK")
+thumb:SetTexture("Interface\\AddOns\\BagTags\\media\\white") -- używa białej tekstury do pokolorowania (lub domyślnej wbudowanej)
+if not thumb:GetTexture() then thumb:SetTexture("Interface\\Buttons\\WHITE8x8") end
+thumb:SetColorTexture(0.4, 0.4, 0.4, 0.6) -- półprzezroczysty szary
+thumb:SetSize(4, 40) -- dopasowany szerokością do linii paska
+customScrollBar:SetThumbTexture(thumb)
+
+-- Efekt hover dla suwaka (rozjaśnia się po najechaniu)
+customScrollBar:SetScript("OnEnter", function() thumb:SetColorTexture(0.6, 0.6, 0.6, 0.8) end)
+customScrollBar:SetScript("OnLeave", function() thumb:SetColorTexture(0.4, 0.4, 0.4, 0.6) end)
+
+customScrollBar:SetScript("OnValueChanged", function(self, value)
+    scrollFrame:SetVerticalScroll(value)
+end)
+
+-- Obsługa scrolla myszką
+scrollFrame:EnableMouseWheel(true)
+scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+    local minVal, maxVal = customScrollBar:GetMinMaxValues()
+    local current = customScrollBar:GetValue()
+    local newValue = current - (delta * 28)
+    if newValue < minVal then newValue = minVal end
+    if newValue > maxVal then newValue = maxVal end
+    customScrollBar:SetValue(newValue)
+end)
+
+contentFrame.sections = {}
+local globalSlotCounter = 1
+
+local internalScanTooltip = CreateFrame("GameTooltip", "BagTagsInventoryInternalScanTooltip", nil, "GameTooltipTemplate")
+internalScanTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+
+local function FormatMoney(amount)
+    if not amount or amount <= 0 then return "" end
+    local gold = math.floor(amount / 10000)
+    local silver = math.floor((amount % 10000) / 100)
+    local copper = amount % 100
+    
+    local result = ""
+    if gold > 0 then result = result .. gold .. "|cffffd700g|r " end
+    if silver > 0 or gold > 0 then result = result .. silver .. "|cffc7c7c7s|r " end
+    if copper > 0 or result == "" then result = result .. copper .. "|cffb87333c|r" end
+    return result
 end
 
-local function FormatMoneyString(copper)
-    if not copper or copper <= 0 then return "0g 0s 0c" end
-    local gold = math.floor(copper / 10000)
-    local silver = math.floor((copper % 10000) / 100)
-    local cp = copper % 100
-    return string.format("%dg %ds %dc", gold, silver, cp)
-end
-
-local function GetAuctionatorPrice(link, itemName)
+local function GetItemVendorPrice(bag, slot)
+    local link = GetContainerItemLink(bag, slot)
     if not link then return 0 end
-    local nameOnly = itemName or GetItemInfo(link)
-    if not nameOnly then return 0 end
-
-    if Atr_GetAuctionPrice then
-        local price = Atr_GetAuctionPrice(nameOnly)
-        if price and type(price) == "number" and price > 0 then return price end
+    
+    local _, count = GetContainerItemInfo(bag, slot)
+    count = count or 1
+    
+    local price = 0
+    if GetSellValue then
+        price = GetSellValue(link) or 0
+    else
+        local _, _, _, _, _, _, _, _, _, _, itemSellPrice = GetItemInfo(link)
+        price = itemSellPrice or 0
     end
-    return 0
+    
+    return price * count
 end
 
-local function GetAuctionatorDEPrice(link, itemName)
-    if not link then return 0 end
-    local nameOnly = itemName or GetItemInfo(link)
-    if not nameOnly then return 0 end
-
-    if Atr_GetDisenchantValue then
-        local dePrice = Atr_GetDisenchantValue(nameOnly)
-        if dePrice and type(dePrice) == "number" and dePrice > 0 then return dePrice end
-    end
-    return 0
+local function GetSlotKey(bag, slot)
+    local link = GetContainerItemLink(bag, slot)
+    if not link then return nil end
+    local itemID = string.match(link, "item:(%d+)")
+    return string.format("%d_%d_%s", bag, slot, itemID or "0")
 end
 
--- 2. OVERLAY FUNCTIONS
+local function SnapshotCurrentItems()
+    table.wipe(knownItems)
+    for bag = 0, 4 do
+        local numSlots = GetContainerNumSlots(bag) or 0
+        for slot = 1, numSlots do
+            local key = GetSlotKey(bag, slot)
+            if key then knownItems[key] = true end
+        end
+    end
+end
+
+local function GetItemTag(bag, slot)
+    local link = GetContainerItemLink(bag, slot)
+    if not link then return nil end
+    
+    local key = GetSlotKey(bag, slot)
+    if key and not knownItems[key] then return "New Items" end
+
+    local _, _, _, _, _, itemClass = GetItemInfo(link)
+    
+    if itemClass == "Consumable" then return "Consumables" end
+    if itemClass == "Trade Goods" or itemClass == "Tradeskill" then return "Tradeskill" end
+    if itemClass == "Quest" then return "Quest" end
+
+    return itemClass or "Miscellaneous"
+end
+
 local function GetOrCreateOverlay(button)
     if button.BagTagsOverlay then return button.BagTagsOverlay end
     local overlay = CreateFrame("Frame", nil, button)
     overlay:SetAllPoints(button)
     overlay:SetFrameLevel(button:GetFrameLevel() + 10)
     overlay:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2 })
+    
     local label = overlay:CreateFontString(nil, "OVERLAY")
-    label:SetFont(FONT_PATH, FONT_SIZE, FONT_FLAGS)
+    label:SetFont("Fonts\\FRIZQT__.TTF", 14, "THICKOUTLINE")
     label:SetPoint("CENTER", overlay, "CENTER", 0, 0)
     overlay.label = label
+    
     button.BagTagsOverlay = overlay
     return overlay
 end
@@ -96,74 +186,53 @@ local function SetOverlayStyle(overlay, borderColor, labelColor, letter)
     overlay:Show()
 end
 
-local scanTooltip = CreateFrame("GameTooltip", "BagTagsScanTooltip", nil, "GameTooltipTemplate")
-scanTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+local function CustomItemButton_Update(slotFrame, bagID, slotID)
+    local texture, count = GetContainerItemInfo(bagID, slotID)
+    local iconTex = _G[slotFrame:GetName().."IconTexture"]
+    local countTex = _G[slotFrame:GetName().."Count"]
+    
+    if texture then iconTex:SetTexture(texture) iconTex:Show() else iconTex:Hide() end
+    if count and count > 1 then countTex:SetText(count) countTex:Show() else countTex:Hide() end
 
-function addonTable:IsItemSoulbound(bag, slot)
-    scanTooltip:ClearLines()
-    scanTooltip:SetBagItem(bag, slot)
-    for i = 2, scanTooltip:NumLines() do
-        local line = _G["BagTagsScanTooltipTextLeft" .. i]
-        local text = line and line:GetText()
-        if text and (text == "Soulbound" or text == "Przypisany" or text == "Binds when picked up") then return true end
-    end
-    return false
-end
-
-local function IsQuestItem(link)
-    if not link then return false end
-    local _, _, _, _, _, itemType = GetItemInfo(link)
-    return itemType == "Quest"
-end
-
-local function GetBagAndSlot(button)
-    if button.GetBag then
-        local ok, bag = pcall(button.GetBag, button)
-        if ok and type(bag) == "number" and button.GetID then return bag, button:GetID() end
-    end
-    local parent = button.GetParent and button:GetParent()
-    if parent and parent.GetID then return parent:GetID(), button:GetID() end
-    return nil, nil
-end
-
-local function UpdateButton(button)
-    if not button then return end
-    local bag, slot = GetBagAndSlot(button)
-    if not bag or not slot then return end
-
-    local link = GetContainerItemLink(bag, slot)
+    local link = GetContainerItemLink(bagID, slotID)
     if not link or not BagTagsConfig then
-        if button.BagTagsOverlay then button.BagTagsOverlay:Hide() end
+        if slotFrame.BagTagsOverlay then slotFrame.BagTagsOverlay:Hide() end
         return
     end
 
-    local itemName, _, quality, _, _, itemType, itemSubtype, _, _, _, itemVendorPrice = GetItemInfo(link)
-    if not quality then quality = GRAY_QUALITY end
+    -- USUNIĘTO TAGOWANIE LITERKĄ "Q" DLA PRZEDMIOTÓW QUESTOWYCH (KATEGORIA WYSTARCZY)
+    local itemName, _, quality, _, _, itemType, _, _, _, _, itemVendorPrice = GetItemInfo(link)
+    if not quality then quality = 0 end
 
-    if IsQuestItem(link) and BagTagsConfig.showQuest then
-        local overlay = GetOrCreateOverlay(button)
-        SetOverlayStyle(overlay, QUEST_BORDER_COLOR, QUEST_LABEL_COLOR, "Q")
-        return
+    local isSoulbound = false
+    internalScanTooltip:ClearLines()
+    internalScanTooltip:SetBagItem(bagID, slotID)
+    for i = 2, internalScanTooltip:NumLines() do
+        local line = _G["BagTagsInventoryInternalScanTooltipTextLeft" .. i]
+        local text = line and line:GetText()
+        if text and (text == "Soulbound" or text == "Przypisany" or text == "Binds when picked up") then 
+            isSoulbound = true 
+            break
+        end
     end
 
-    if IsItemSoulbound(bag, slot) and BagTagsConfig.showSoulbound then
-        local overlay = GetOrCreateOverlay(button)
-        SetOverlayStyle(overlay, SOULBOUND_BORDER_COLOR, SOULBOUND_LABEL_COLOR, "S")
+    if isSoulbound and BagTagsConfig.showSoulbound then
+        local overlay = GetOrCreateOverlay(slotFrame)
+        SetOverlayStyle(overlay, { r = 0.53, g = 0.12, b = 0.77, a = 1 }, { r = 0.90, g = 0.60, b = 1.0, a = 1 }, "S")
         return
     end
 
     if BagTagsConfig.showMarket then
-        local ahPrice = GetAuctionatorPrice(link, itemName)
+        local ahPrice = 0
+        if Atr_GetAuctionPrice then ahPrice = Atr_GetAuctionPrice(itemName) or 0 end
+        
+        local deValue = 0
+        if Atr_GetDisenchantValue then deValue = Atr_GetDisenchantValue(itemName) or 0 end
+        
         local vendorPrice = itemVendorPrice or 0
-        local deValue = GetAuctionatorDEPrice(link, itemName)
-
         local realAhPrice = ahPrice * 0.95
         local realDeValue = deValue * 0.95
-
-        local depositRisk = 0
-        if itemType == "Armor" or itemType == "Weapon" then
-            depositRisk = vendorPrice * 0.60
-        end
+        local depositRisk = (itemType == "Armor" or itemType == "Weapon") and (vendorPrice * 0.60) or 0
 
         local currentTag = "NONE"
         local maxEffectiveValue = vendorPrice
@@ -173,7 +242,13 @@ local function UpdateButton(button)
             currentTag = "A"
         end
 
-        if BagTagsConfig.showDisenchant and HasEnchanting() and (quality == UNCOMMON_QUALITY or quality == RARE_QUALITY) and (itemType == "Armor" or itemType == "Weapon") then
+        local hasEnchanting = false
+        for i = 1, GetNumSkillLines() do
+            local skillName = GetSkillLineInfo(i)
+            if skillName == "Enchanting" or skillName == "Zaklinanie" then hasEnchanting = true break end
+        end
+
+        if BagTagsConfig.showDisenchant and hasEnchanting and (quality == 2 or quality == 3) and (itemType == "Armor" or itemType == "Weapon") then
             if realDeValue > maxEffectiveValue and realDeValue > vendorPrice then
                 maxEffectiveValue = realDeValue
                 currentTag = "D"
@@ -185,406 +260,201 @@ local function UpdateButton(button)
         end
 
         if currentTag == "A" then
-            local overlay = GetOrCreateOverlay(button)
-            SetOverlayStyle(overlay, AH_BORDER_COLOR, AH_LABEL_COLOR, "A")
+            local overlay = GetOrCreateOverlay(slotFrame)
+            SetOverlayStyle(overlay, { r = 0.1, g = 1, b = 0.1, a = 1 }, { r = 0.4, g = 1, b = 0.4, a = 1 }, "A")
             return
         elseif currentTag == "D" then
-            local overlay = GetOrCreateOverlay(button)
-            SetOverlayStyle(overlay, DE_BORDER_COLOR, DE_LABEL_COLOR, "D")
+            local overlay = GetOrCreateOverlay(slotFrame)
+            SetOverlayStyle(overlay, { r = 0.8, g = 0.3, b = 0.8, a = 1 }, { r = 1.0, g = 0.5, b = 1.0, a = 1 }, "D")
             return
         elseif currentTag == "V" and BagTagsConfig.showVendor then
-            local overlay = GetOrCreateOverlay(button)
-            SetOverlayStyle(overlay, VEND_BORDER_COLOR, VEND_LABEL_COLOR, "V")
+            local overlay = GetOrCreateOverlay(slotFrame)
+            SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
             return
         end
     end
 
-    if quality == GRAY_QUALITY and BagTagsConfig.showVendor then
-        local overlay = GetOrCreateOverlay(button)
-        SetOverlayStyle(overlay, VEND_BORDER_COLOR, VEND_LABEL_COLOR, "V")
-    elseif button.BagTagsOverlay then
-        button.BagTagsOverlay:Hide()
+    if quality == 0 and BagTagsConfig.showVendor then
+        local overlay = GetOrCreateOverlay(slotFrame)
+        SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
+    elseif slotFrame.BagTagsOverlay then
+        slotFrame.BagTagsOverlay:Hide()
     end
 end
 
-local function RefreshAllBags()
-    for i = 1, 12 do
-        local frame = _G["ContainerFrame"..i]
-        if frame and frame:IsShown() then
-            for j = 1, MAX_CONTAINER_ITEMS do
-                local button = _G["ContainerFrame"..i.."Item"..j]
-                if button then UpdateButton(button) end
-            end
+function BT.InventoryModule:UpdateLayout()
+    if not mainFrame:IsShown() then return end
+    
+    for _, section in pairs(contentFrame.sections) do
+        section:Hide()
+        if section.slots then 
+            for _, slotFrame in pairs(section.slots) do slotFrame:Hide() end 
         end
     end
-    if Bagnon and Bagnon.Frames and Bagnon.Frames.UpdateFrames then
-        Bagnon.Frames:UpdateFrames()
-    elseif Bagnon and Bagnon.UpdateFrames then
-        Bagnon:UpdateFrames()
-    end
-end
-
--- NATIVE 3.3.5a ASYNCHRONOUS BAG SORTER ENGINE
-local sortQueue = {}
-local sortFrame = CreateFrame("Frame")
-sortFrame:Hide()
-sortFrame:SetScript("OnUpdate", function(self, elapsed)
-    self.throttle = (self.throttle or 0) + elapsed
-    if self.throttle < 0.05 then return end
-    self.throttle = 0
     
-    if #sortQueue == 0 then
-        self:Hide()
-        print("|cff00ff00[BagTags]: Sorting finished safely!|r")
-        RefreshAllBags()
-        return
-    end
+    local groups = {}
+    local categoryValues = {} 
+    local orderedCategories = { "New Items", "Consumables", "Tradeskill", "Quest", "Miscellaneous" }
     
-    local action = sortQueue[1]
-    local _, _, l1 = GetContainerItemInfo(action.fB, action.fS)
-    local _, _, l2 = GetContainerItemInfo(action.tB, action.tS)
-    if l1 or l2 then return end
-    
-    table.remove(sortQueue, 1)
-    PickupContainerItem(action.fB, action.fS)
-    PickupContainerItem(action.tB, action.tS)
-end)
-
-local function RunCustomBagSort()
-    if InCombatLockdown() then return end
-    table.wipe(sortQueue)
-    
-    local slots = {}
     for bag = 0, 4 do
-        local _, family = GetContainerNumFreeSlots(bag)
-        if not family or family == 0 then
-            for slot = 1, GetContainerNumSlots(bag) do
-                table.insert(slots, {bag = bag, slot = slot})
-            end
-        end
-    end
-    
-    local items = {}
-    for _, s in ipairs(slots) do
-        local link = GetContainerItemLink(s.bag, s.slot)
-        if link then
-            local name, _, rarity, _, _, iType = GetItemInfo(link)
-            table.insert(items, {bag = s.bag, slot = s.slot, rarity = rarity or 0, name = name or "", iType = iType or ""})
-        end
-    end
-    
-    table.sort(items, function(a, b)
-        if a.rarity ~= b.rarity then return a.rarity > b.rarity end
-        if a.iType ~= b.iType then return a.iType < b.iType end
-        return a.name < b.name
-    end)
-    
-    for i, item in ipairs(items) do
-        local targetSlot = slots[i]
-        if targetSlot and (item.bag ~= targetSlot.bag or item.slot ~= targetSlot.slot) then
-            table.insert(sortQueue, {fB = item.bag, fS = item.slot, tB = targetSlot.bag, tS = targetSlot.slot})
-            for j = i + 1, #items do
-                if items[j].bag == targetSlot.bag and items[j].slot == targetSlot.slot then
-                    items[j].bag = item.bag
-                    items[j].slot = item.slot
-                    break
+        local numSlots = GetContainerNumSlots(bag) or 0
+        for slot = 1, numSlots do
+            if GetContainerItemLink(bag, slot) then
+                local tag = GetItemTag(bag, slot) or "Miscellaneous"
+                if not groups[tag] then 
+                    groups[tag] = {} 
+                    categoryValues[tag] = 0
+                end
+                table.insert(groups[tag], {bag = bag, slot = slot})
+                
+                local itemPrice = GetItemVendorPrice(bag, slot)
+                categoryValues[tag] = categoryValues[tag] + itemPrice
+                
+                local found = false
+                for _, name in ipairs(orderedCategories) do
+                    if name == tag then found = true break end
+                end
+                if not found then 
+                    table.insert(orderedCategories, tag) 
+                    categoryValues[tag] = itemPrice
                 end
             end
-            item.bag = targetSlot.bag
-            item.slot = targetSlot.slot
         end
     end
     
-    if #sortQueue > 0 then
-        print("|cff00ff00[BagTags]: Processing inventory sort queue...|r")
-        sortFrame:Show()
-    else
-        print("|cff00ff00[BagTags]: Backpack is already perfectly ordered.|r")
-    end
-end
-
--- 3. CHAT REPORT LOGIC
-local function HandleReport(subCommand)
-    if subCommand == "sort" then
-        RunCustomBagSort()
-        return
-    end
-
-    if subCommand == "debug" then
-        print("|cff00ff00[BagTags Debug]: Scanning main bag, slot 1...|r")
-        local link = GetContainerItemLink(0, 1)
-        if not link then
-            print("|cffff0000[Error]: Slot 1 is empty!|r")
-            return
-        end
-        local itemName, _, _, _, _, itemType = GetItemInfo(link)
-        local ah = GetAuctionatorPrice(link, itemName)
-        local de = GetAuctionatorDEPrice(link, itemName)
-        print("Item Name: ", itemName or "nil")
-        print("Atr_GetAuctionPrice: ", ah)
-        print("Atr_GetDisenchantValue: ", de)
-        return
-    end
-
-    local totalFreeSlots, totalMaxSlots = 0, 0
-    local vendorCount, vendorValue = 0, 0
-    local ahCount, ahValue = 0, 0
-    local matsReportList = {}
-    local classReportList = {}
-    local ahReportList = {}
-
-    for bag = 0, 4 do
-        local numSlots = GetContainerNumSlots(bag)
-        if numSlots and numSlots > 0 then
-            totalMaxSlots = totalMaxSlots + numSlots
-            for slot = 1, numSlots do
-                local link = GetContainerItemLink(bag, slot)
-                if not link then
-                    totalFreeSlots = totalFreeSlots + 1
-                else
-                    local _, itemCount = GetContainerItemInfo(bag, slot)
-                    itemCount = itemCount or 1
-                    local itemName, _, rarity, _, _, itemType, itemSubtype, _, _, _, itemVendorPrice = GetItemInfo(link)
-                    if itemName then
-                        local isSoulbound = IsItemSoulbound(bag, slot)
-                        local isQuest = IsQuestItem(link)
-                        local ahPrice = GetAuctionatorPrice(link, itemName)
-                        local dePrice = GetAuctionatorDEPrice(link, itemName)
-                        local singleVendorPrice = itemVendorPrice or 0
-
-                        if not rarity then rarity = GRAY_QUALITY end
-
-                        local realAhPrice = ahPrice * 0.95
-                        local realDeValue = dePrice * 0.95
-                        local depositRisk = (itemType == "Armor" or itemType == "Weapon") and (singleVendorPrice * 0.60) or 0
-
-                        local maxVal = singleVendorPrice
-                        local chosen = "V"
-
-                        if realAhPrice > 0 and (realAhPrice - depositRisk) > maxVal then
-                            maxVal = realAhPrice - depositRisk
-                            chosen = "A"
-                        end
-
-                        if BagTagsConfig.showDisenchant and HasEnchanting() and (rarity == UNCOMMON_QUALITY or rarity == RARE_QUALITY) and (itemType == "Armor" or itemType == "Weapon") then
-                            if realDeValue > maxVal and realDeValue > singleVendorPrice then
-                                maxVal = realDeValue
-                                chosen = "D"
-                            end
-                        end
-
-                        if isSoulbound or isQuest then
-                            -- Ignoruj
-                        elseif chosen == "V" or rarity == GRAY_QUALITY then
-                            vendorCount = vendorCount + itemCount
-                            vendorValue = vendorValue + (singleVendorPrice * itemCount)
-                        elseif chosen == "D" then
-                            table.insert(ahReportList, { name = link .. " (DE)", count = itemCount, singleAh = dePrice })
-                        else
-                            ahCount = ahCount + itemCount
-                            ahValue = ahValue + (ahPrice * 0.95 * itemCount)
-                            table.insert(ahReportList, { name = link, count = itemCount, singleAh = ahPrice })
-                        end
-
-                        if itemType == "Tradeskill" or itemType == "Material" then
-                            matsReportList[itemName] = (matsReportList[itemName] or 0) + itemCount
-                        elseif itemSubtype == "Soul Shard" or itemName == "Soul Shard" or itemType == "Reagent" then
-                            classReportList[itemName] = (classReportList[itemName] or 0) + itemCount
-                        end
+    local currentY = -10
+    local COLUMNS = 10 
+    local SLOT_SIZE = 35
+    
+    for _, catName in ipairs(orderedCategories) do
+        local itemDataList = groups[catName]
+        local count = itemDataList and #itemDataList or 0
+        
+        if count > 0 then
+            local section = contentFrame.sections[catName]
+            
+            if not section then
+                section = CreateFrame("Frame", nil, contentFrame)
+                section.slots = {}
+                
+                local header = CreateFrame("Button", nil, section)
+                header:SetSize(355, 20)
+                header:SetPoint("TOPLEFT", section, "TOPLEFT", 0, 0)
+                
+                local fontString = header:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+                fontString:SetFont("Fonts\\FRIZQT__.TTF", 11, "OUTLINE")
+                fontString:SetPoint("LEFT", header, "LEFT", 2, 0)
+                header.text = fontString
+                
+                header:SetScript("OnClick", function()
+                    BagTagsCategoryState[catName] = not BagTagsCategoryState[catName]
+                    BT.InventoryModule:UpdateLayout()
+                end)
+                
+                local highlight = header:CreateTexture(nil, "HIGHLIGHT")
+                highlight:SetAllPoints()
+                highlight:SetTexture(1, 1, 1, 0.1)
+                
+                section.header = header
+                contentFrame.sections[catName] = section
+            end
+            
+            local isCollapsed = BagTagsCategoryState[catName]
+            local prefix = isCollapsed and "[+] " or "[-] "
+            
+            if catName == "New Items" then 
+                section.header.text:SetTextColor(0, 1, 0.5)
+            elseif isCollapsed then 
+                section.header.text:SetTextColor(0.6, 0.6, 0.6)
+            else 
+                section.header.text:SetTextColor(1, 0.82, 0) 
+            end
+            
+            -- WYJĄTEK: Ukrywanie wartości Vendor dla kategorii "Quest"
+            local goldText = ""
+            local totalValue = categoryValues[catName] or 0
+            if totalValue > 0 and catName ~= "Quest" then
+                goldText = "  |cff808080(Vendor: " .. FormatMoney(totalValue) .. ")|r"
+            end
+            
+            section.header.text:SetText(prefix .. catName .. " (" .. count .. ")" .. goldText)
+            
+            section:ClearAllPoints()
+            section:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, currentY)
+            section:Show()
+            
+            local sectionHeight = 20
+            if not isCollapsed then
+                for index, itemInfo in ipairs(itemDataList) do
+                    local slotFrame = section.slots[index]
+                    if not slotFrame then
+                        local slotName = "BagTagsSlotButton_" .. globalSlotCounter
+                        globalSlotCounter = globalSlotCounter + 1
+                        slotFrame = CreateFrame("Button", slotName, section, "ContainerFrameItemButtonTemplate")
+                        section.slots[index] = slotFrame
                     end
+                    
+                    slotFrame:SetID(itemInfo.slot)
+                    local parentFrame = slotFrame:GetParent()
+                    parentFrame:SetID(itemInfo.bag)
+                    
+                    local row = math.floor((index - 1) / COLUMNS)
+                    local col = (index - 1) % COLUMNS
+                    
+                    slotFrame:ClearAllPoints()
+                    slotFrame:SetPoint("TOPLEFT", section, "TOPLEFT", col * SLOT_SIZE, -(20 + (row * SLOT_SIZE)))
+                    slotFrame:SetSize(32, 32)
+                    
+                    CustomItemButton_Update(slotFrame, itemInfo.bag, itemInfo.slot)
+                    
+                    local iconTex = _G[slotFrame:GetName().."IconTexture"]
+                    if iconTex then iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
+                    slotFrame:Show()
                 end
+                local totalRows = math.ceil(count / COLUMNS)
+                sectionHeight = 22 + (totalRows * SLOT_SIZE)
             end
+            section:SetSize(355, sectionHeight)
+            currentY = currentY - (sectionHeight + 10)
         end
     end
-
-    if subCommand == "vendor" then
-        print("|cff00ff00[BagTags]: Inventory Cleanup Analysis:|r")
-        print(string.format("Trash & Safe Vendor items: %d pcs. (Value: %s)", vendorCount, FormatMoneyString(vendorValue)))
-    elseif subCommand == "mats" then
-        print("|cff00ff00[BagTags]: Bag Stock Status:|r")
-        local matsStr = ""
-        for name, count in pairs(matsReportList) do matsStr = matsStr .. name .. " (" .. count .. "x), " end
-        if matsStr == "" then matsStr = "No crafting materials, " end
-        print("Crafting: " .. string.sub(matsStr, 1, -3) .. ".")
-        local alert = (totalFreeSlots < 5) and " (|cffff0000Time to empty your bags!|r)" or ""
-        print(string.format("Free space: %d / %d slots.%s", totalFreeSlots, totalMaxSlots, alert))
-    elseif subCommand == "ah" then
-        print("|cff00ff00[BagTags]: Smart Market Actions (Fees Accounted):|r")
-        if #ahReportList == 0 then
-            print("No items currently clear the deposit & auction house fee risk threshold.")
-        else
-            for _, data in ipairs(ahReportList) do
-                print(string.format("%s x%d (Gross Market: %s)", data.name, data.count, FormatMoneyString(data.singleAh)))
-            end
-        end
+    
+    contentFrame:SetHeight(math.abs(currentY))
+    
+    local maxScroll = math.max(0, math.abs(currentY) - scrollFrame:GetHeight())
+    customScrollBar:SetMinMaxValues(0, maxScroll)
+    
+    if maxScroll > 0 then
+        customScrollBar:Show()
     else
-        print("|cff00ff00[BagTags]|r Usage: /bg [vendor | mats | ah | sort | debug]")
+        customScrollBar:Hide()
+        customScrollBar:SetValue(0)
     end
 end
 
-SLASH_BAGTAGS1 = "/bg"
-SLASH_BAGTAGS2 = "/bagtags"
-SlashCmdList["BAGTAGS"] = function(msg) HandleReport(string.lower(string.trim(msg or ""))) end
+function BT.InventoryModule:ShowFrame() mainFrame:Show() self:UpdateLayout() end
+function BT.InventoryModule:HideFrame() mainFrame:Hide() SnapshotCurrentItems() end
+function BT.InventoryModule:ToggleFrame() if mainFrame:IsShown() then self:HideFrame() else self:ShowFrame() end end
 
--- 4. INTERFACE OPTIONS UI - MAIN WINDOW (MANAGE TAGS)
-local optionsPanel = CreateFrame("Frame", "BagTagsOptionsPanel", UIParent)
-optionsPanel.name = "BagTags"
-
-local title = optionsPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-title:SetPoint("TOPLEFT", 16, -16)
-title:SetText("BagTags Configuration")
-
-local function CreateCheckboxWithDesc(parent, labelText, descText, configKey, yOffset)
-    local name = "BagTags_" .. configKey
-    local cb = CreateFrame("CheckButton", name, parent, "InterfaceOptionsCheckButtonTemplate")
-    cb:SetPoint("TOPLEFT", 20, yOffset)
-    _G[name .. "Text"]:SetText("|cffffffff" .. labelText .. "|r")
-    
-    -- Czysty FontString bez wadliwego szablonu single-line
-    local desc = parent:CreateFontString(nil, "ARTWORK")
-    desc:SetFont("Fonts\\FRIZQT__.TTF", 10)
-    desc:SetTextColor(0.65, 0.65, 0.65, 1)
-    desc:SetPoint("TOPLEFT", 45, yOffset - 22)
-    desc:SetPoint("RIGHT", parent, "RIGHT", -20, 0)
-    desc:SetHeight(30) -- Dajemy przestrzeń na drugą linię
-    desc:SetJustifyH("LEFT")
-    desc:SetJustifyV("TOP")
-    desc:SetText(descText)
-
-    cb:SetScript("OnShow", function(self) self:SetChecked(BagTagsConfig[configKey]) end)
-    cb:SetScript("OnClick", function(self)
-        BagTagsConfig[configKey] = not not self:GetChecked()
-        RefreshAllBags()
-    end)
-    return cb
-end
-
-local function CreateDivider(parent, yOffset)
-    local line = parent:CreateTexture(nil, "ARTWORK")
-    line:SetHeight(1)
-    line:SetTexture(0.25, 0.25, 0.25, 0.6)
-    line:SetPoint("TOPLEFT", 20, yOffset)
-    line:SetPoint("RIGHT", parent, "RIGHT", -20, 0)
-end
-
--- Zwiększone yOffset z -55 na -65 dla idealnego rozłożenia pionowego dwuliniowych opisów
-CreateCheckboxWithDesc(optionsPanel, "Enable Vendor & Trash Tags (V)", "Marks gray quality trash items and equipment pieces whose direct merchant sell value safely outclasses active Auction House listings.", "showVendor", -50)
-CreateDivider(optionsPanel, -105)
-
-CreateCheckboxWithDesc(optionsPanel, "Enable Quest Tags (Q)", "Highlights essential active quest inventory items with a distinct border to prevent accidental deleting or misplacing.", "showQuest", -125)
-CreateDivider(optionsPanel, -180)
-
-CreateCheckboxWithDesc(optionsPanel, "Enable Soulbound Tags (S)", "Displays a subtle label over soulbound equipment items, ensuring easy visually tracked character progression inventory slots.", "showSoulbound", -200)
-CreateDivider(optionsPanel, -255)
-
-CreateCheckboxWithDesc(optionsPanel, "Enable Auctionator Integration (A)", "Filters active marketplace items by analyzing continuous deposit risks against real-time 24-hour database prices.", "showMarket", -275)
-CreateDivider(optionsPanel, -330)
-
-CreateCheckboxWithDesc(optionsPanel, "Enable Disenchant Suggestions (D)", "Triggers contextual overlay markers for characters with the Enchanting profession when projected materials valuation yields reliable profit.", "showDisenchant", -350)
-
-InterfaceOptions_AddCategory(optionsPanel)
-
--- 5. INTERFACE OPTIONS UI - SUB WINDOW (ABOUT)
-local docPanel = CreateFrame("Frame", "BagTagsDocPanel", UIParent)
-docPanel.name = "About"
-docPanel.parent = optionsPanel.name
-
-local docTitle = docPanel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-docTitle:SetPoint("TOPLEFT", 16, -16)
-docTitle:SetText("About BagTags")
-
-local docText = docPanel:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-docText:SetPoint("TOPLEFT", 16, -50)
-docText:SetPoint("RIGHT", docPanel, "RIGHT", -20, 0)
-docText:SetJustifyH("LEFT")
-docText:SetJustifyV("TOP")
-docText:SetText("Type /bg or /bagtags in chat to generate explicit real-time status breakdowns:\n\n" ..
-                "|cff00ff00/bg vendor|r - Performs inventory analysis on merchantable junk.\n" ..
-                "|cff00ff00/bg mats|r - Generates immediate craft stock and materials audit.\n" ..
-                "|cff00ff00/bg ah|r - Lists high valuation targets viable for active auction trades.\n" ..
-                "|cff00ff00/bg sort|r - Triggers native asynchronous container sorting routines.\n" ..
-                "|cff00ff00/bg debug|r - Troubleshoots internal database cross-reference bindings.\n\n" ..
-                "Author: grombor\nVersion: 0.7.3")
-InterfaceOptions_AddCategory(docPanel)
-
--- 6. MINIMAP BUTTON WITH DIRECT DRAG SUPPORT
-local minimapBtn = CreateFrame("Button", "BagTagsMinimapButton", Minimap)
-minimapBtn:SetWidth(32)
-minimapBtn:SetHeight(32)
-minimapBtn:SetFrameLevel(Minimap:GetFrameLevel() + 5)
-minimapBtn:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-
-local icon = minimapBtn:CreateTexture(nil, "BACKGROUND")
-icon:SetWidth(20)
-icon:SetHeight(20)
-icon:SetTexture("Interface\\Icons\\INV_Misc_Bag_07")
-icon:SetPoint("CENTER", 0, 0)
-
-local border = minimapBtn:CreateTexture(nil, "OVERLAY")
-border:SetWidth(54)
-border:SetHeight(54)
-border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
-border:SetPoint("TOPLEFT", 0, 0)
-
-local function UpdateButtonPosition()
-    local currentAngle = BagTagsButtonPosition or 190
-    minimapBtn:SetPoint("TOPLEFT", Minimap, "TOPLEFT", 52 - (80 * cos(currentAngle)), (80 * sin(currentAngle)) - 52)
-end
-
-minimapBtn:RegisterForDrag("LeftButton")
-minimapBtn:SetScript("OnDragStart", function(self)
-    self.isDragging = true
-    self:SetScript("OnUpdate", function(self)
-        local xpos, ypos = GetCursorPosition()
-        local xmin, ymin = Minimap:GetLeft(), Minimap:GetBottom()
-        local scale = Minimap:GetEffectiveScale()
-        local x = (xmin * scale) - xpos + 70
-        local y = ypos - (ymin * scale) - 70
-        BagTagsButtonPosition = math.deg(math.atan2(y, x))
-        UpdateButtonPosition()
-    end)
-end)
-
-minimapBtn:SetScript("OnDragStop", function(self)
-    self:SetScript("OnUpdate", nil)
-    local f = CreateFrame("Frame")
-    f:SetScript("OnUpdate", function(fself) self.isDragging = false fself:SetScript("OnUpdate", nil) end)
-end)
-
-minimapBtn:RegisterForClicks("AnyUp")
-minimapBtn:SetScript("OnClick", function(self, button)
-    if self.isDragging then return end
-    
-    if button == "LeftButton" then
-        if InterfaceOptionsFrame_OpenToCategory then 
-            InterfaceOptionsFrame_OpenToCategory(optionsPanel) 
-        end
-    elseif button == "RightButton" then
-        RunCustomBagSort()
+local function CloseBlizz()
+    for id = 1, 5 do
+        local frame = _G["ContainerFrame"..id]
+        if frame then frame:Hide() end
     end
-end)
+end
+
+hooksecurefunc("OpenAllBags", function() CloseBlizz() BT.InventoryModule:ShowFrame() end)
+hooksecurefunc("OpenBackpack", function() CloseBlizz() BT.InventoryModule:ShowFrame() end)
+hooksecurefunc("ToggleBag", function() CloseBlizz() BT.InventoryModule:ToggleFrame() end)
+hooksecurefunc("CloseAllBags", function() BT.InventoryModule:HideFrame() end)
+hooksecurefunc("CloseBackpack", function() BT.InventoryModule:HideFrame() end)
 
 local initFrame = CreateFrame("Frame")
-initFrame:RegisterEvent("VARIABLES_LOADED")
-initFrame:SetScript("OnEvent", function() UpdateButtonPosition() end)
+initFrame:RegisterEvent("PLAYER_LOGIN")
+initFrame:SetScript("OnEvent", function() table.wipe(knownItems) end)
 
--- 7. UPDATE HOOKS FOR STANDARD BAGS AND BAGNON
-if ContainerFrameItemButton_Update then hooksecurefunc("ContainerFrameItemButton_Update", UpdateButton) end
-local function HookBagnon()
-    if not Bagnon then return false end
-    if Bagnon.Item and Bagnon.Item.Update then
-        hooksecurefunc(Bagnon.Item, "Update", UpdateButton)
-        return true
-    elseif Bagnon.ItemSlot and Bagnon.ItemSlot.Update then
-        hooksecurefunc(Bagnon.ItemSlot, "Update", UpdateButton)
-        return true
-    end
-    return false
-end
-if not HookBagnon() then
-    local waitFrame = CreateFrame("Frame")
-    waitFrame:RegisterEvent("ADDON_LOADED")
-    waitFrame:SetScript("OnEvent", function(self, event, addonName)
-        if addonName == "Bagnon" then HookBagnon() self:UnregisterEvent("ADDON_LOADED") end
-    end)
-end
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("BAG_UPDATE")
+eventFrame:SetScript("OnEvent", function() 
+    if mainFrame:IsShown() then BT.InventoryModule:UpdateLayout() end 
+end)
