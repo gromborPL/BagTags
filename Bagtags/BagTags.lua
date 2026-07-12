@@ -29,9 +29,21 @@ mainFrame:SetBackdropColor(0.05, 0.05, 0.05, 0.9)
 mainFrame:SetBackdropBorderColor(0.2, 0.2, 0.2, 1)
 mainFrame:Hide()
 
+-- Główny tytuł (lewa strona)
 local title = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-title:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 15, -15)
-title:SetText("Backpack")
+title:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 15, -16)
+
+-- Przycisk zamknięcia (musimy go znać, aby przypiąć do niego kasę)
+local closeBtn = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
+closeBtn:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -5, -5)
+closeBtn:SetScript("OnClick", function() 
+    BT.InventoryModule:HideFrame() 
+end)
+
+-- Nowy napis na złoto - przypięty do LEWEJ strony przycisku zamknięcia
+local moneyDisplay = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+moneyDisplay:SetPoint("RIGHT", closeBtn, "LEFT", -5, -1) 
+moneyDisplay:SetJustifyH("RIGHT") -- Wyrównanie tekstu do prawej
 
 local closeBtn = CreateFrame("Button", nil, mainFrame, "UIPanelCloseButton")
 closeBtn:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -5, -5)
@@ -106,17 +118,51 @@ local function GetOrCreateVirtualBag(bagID)
     return f
 end
 
+-- ============================================================================
+-- FORMERY I FUNKCJE POMOCNICZE (ZACHOWANA POPRAWNA KOLEJNOŚĆ WIDOCZNOŚCI)
+-- ============================================================================
+
+-- Nowoczesne formatowanie przy użyciu tekstur wbudowanych ikon Blizzarda
 local function FormatMoney(amount)
-    if not amount or amount <= 0 then return "" end
+    if not amount or amount <= 0 then 
+        return "0|TInterface\\MoneyFrame\\UI-CopperIcon:12:12:2:0|t" 
+    end
     local gold = math.floor(amount / 10000)
     local silver = math.floor((amount % 10000) / 100)
     local copper = amount % 100
     
     local result = ""
-    if gold > 0 then result = result .. gold .. "|cffffd700g|r " end
-    if silver > 0 or gold > 0 then result = result .. silver .. "|cffc7c7c7s|r " end
-    if copper > 0 or result == "" then result = result .. copper .. "|cffb87333c|r" end
+    if gold > 0 then 
+        result = result .. gold .. "|TInterface\\MoneyFrame\\UI-GoldIcon:12:12:2:0|t " 
+    end
+    if silver > 0 or gold > 0 then 
+        result = result .. silver .. "|TInterface\\MoneyFrame\\UI-SilverIcon:12:12:2:0|t " 
+    end
+    if copper > 0 or result == "" then 
+        result = result .. copper .. "|TInterface\\MoneyFrame\\UI-CopperIcon:12:12:2:0|t" 
+    end
     return result
+end
+
+local function UpdateTitleText()
+    local charName = UnitName("player") or "Character"
+    local currentMoney = GetMoney() or 0
+    
+    -- Pobieranie koloru klasy dla estetycznego wyglądu nicku
+    local _, classFilename = UnitClass("player")
+    local classColorStr = "ffffff" -- domyślny biały
+    if classFilename then
+        local color = RAID_CLASS_COLORS[classFilename]
+        if color then
+            classColorStr = string.format("%02x%02x%02x", color.r*255, color.g*255, color.b*255)
+        end
+    end
+    
+    -- Tytuł po lewej: Backpack | Nick (w kolorze klasy)
+    title:SetText("Backpack  |cff808080•|r  |cff" .. classColorStr .. charName .. "|r")
+    
+    -- Kasa po prawej przy użyciu ładnych ikon
+    moneyDisplay:SetText(FormatMoney(currentMoney))
 end
 
 local function GetItemVendorPrice(bag, slot)
@@ -453,7 +499,11 @@ function BT.InventoryModule:UpdateLayout()
     end
 end
 
-function BT.InventoryModule:ShowFrame() mainFrame:Show() self:UpdateLayout() end
+function BT.InventoryModule:ShowFrame() 
+    mainFrame:Show() 
+    UpdateTitleText()
+    self:UpdateLayout() 
+end
 function BT.InventoryModule:HideFrame() mainFrame:Hide() SnapshotCurrentItems() end
 function BT.InventoryModule:ToggleFrame() if mainFrame:IsShown() then self:HideFrame() else self:ShowFrame() end end
 
@@ -489,8 +539,13 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("BAG_UPDATE")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
-eventFrame:SetScript("OnEvent", function() 
+eventFrame:RegisterEvent("PLAYER_MONEY") -- <--- DODAJ TO (reaguje na zmiany złota)
+eventFrame:SetScript("OnEvent", function(self, event) 
     if mainFrame:IsShown() then 
-        BT.InventoryModule:UpdateLayout() 
+        if event == "PLAYER_MONEY" then
+            UpdateTitleText() -- To zaktualizuje zarówno tytuł jak i nowy moneyDisplay
+        else
+            BT.InventoryModule:UpdateLayout() 
+        end
     end 
 end)
