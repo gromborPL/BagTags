@@ -1,5 +1,5 @@
 -- ============================================================================
--- INTEGRACJA Z SYSTEMEM TAGOWANIA BAGTAGS + MODERN SCROLL & QUEST FIX
+-- INTEGRACJA Z SYSTEMEM TAGOWANIA BAGTAGS + HARD KEYBIND & REFRESH FIX
 -- ============================================================================
 local addonName, BT = ...
 BT.InventoryModule = {}
@@ -39,7 +39,6 @@ closeBtn:SetScript("OnClick", function()
     BT.InventoryModule:HideFrame() 
 end)
 
--- Kontener na zawartość torby
 local scrollFrame = CreateFrame("ScrollFrame", "BagTagsInventoryScrollFrame", mainFrame)
 scrollFrame:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -45)
 scrollFrame:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -30, 15)
@@ -48,32 +47,27 @@ local contentFrame = CreateFrame("Frame", nil, scrollFrame)
 contentFrame:SetSize(355, 1)
 scrollFrame:SetScrollChild(contentFrame)
 
--- MINIMALISTYCZNY, NOWOCZESNY SUWAK
 local customScrollBar = CreateFrame("Slider", "BagTagsInventoryCustomScrollBar", mainFrame)
 customScrollBar:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -10, -55)
 customScrollBar:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 25)
-customScrollBar:SetWidth(4) -- Bardzo cienki, nowoczesny pasek
+customScrollBar:SetWidth(4)
 customScrollBar:SetOrientation("VERTICAL")
 customScrollBar:SetMinMaxValues(0, 0)
 customScrollBar:SetValue(0)
 customScrollBar:SetValueStep(1)
 
--- Tło suwaka (delikatna, ciemna linia prowadząca)
 customScrollBar:SetBackdrop({
     bgFile = "Interface\\Buttons\\WHITE8x8",
     insets = { left = 0, right = 0, top = 0, bottom = 0 }
 })
 customScrollBar:SetBackdropColor(1, 1, 1, 0.05)
 
--- Nowoczesny, zaokrąglony i półprzezroczysty uchwyt suwaka
 local thumb = customScrollBar:CreateTexture(nil, "ARTWORK")
-thumb:SetTexture("Interface\\AddOns\\BagTags\\media\\white") -- używa białej tekstury do pokolorowania (lub domyślnej wbudowanej)
 if not thumb:GetTexture() then thumb:SetTexture("Interface\\Buttons\\WHITE8x8") end
-thumb:SetColorTexture(0.4, 0.4, 0.4, 0.6) -- półprzezroczysty szary
-thumb:SetSize(4, 40) -- dopasowany szerokością do linii paska
+thumb:SetColorTexture(0.4, 0.4, 0.4, 0.6)
+thumb:SetSize(4, 40)
 customScrollBar:SetThumbTexture(thumb)
 
--- Efekt hover dla suwaka (rozjaśnia się po najechaniu)
 customScrollBar:SetScript("OnEnter", function() thumb:SetColorTexture(0.6, 0.6, 0.6, 0.8) end)
 customScrollBar:SetScript("OnLeave", function() thumb:SetColorTexture(0.4, 0.4, 0.4, 0.6) end)
 
@@ -81,7 +75,6 @@ customScrollBar:SetScript("OnValueChanged", function(self, value)
     scrollFrame:SetVerticalScroll(value)
 end)
 
--- Obsługa scrolla myszką
 scrollFrame:EnableMouseWheel(true)
 scrollFrame:SetScript("OnMouseWheel", function(self, delta)
     local minVal, maxVal = customScrollBar:GetMinMaxValues()
@@ -97,6 +90,21 @@ local globalSlotCounter = 1
 
 local internalScanTooltip = CreateFrame("GameTooltip", "BagTagsInventoryInternalScanTooltip", nil, "GameTooltipTemplate")
 internalScanTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+
+-- Słownik przechowujący przyciski przypisane na stałe do konkretnej torby i slotu [bag][slot]
+local poolButtons = {}
+for b = 0, 4 do poolButtons[b] = {} end
+
+-- Tworzymy ukryte, stabilne wirtualne ramki toreb jako dzieci kontenera przewijania
+local virtualBags = {}
+local function GetOrCreateVirtualBag(bagID)
+    if virtualBags[bagID] then return virtualBags[bagID] end
+    local f = CreateFrame("Frame", "BagTagsVirtualBagFrame_"..bagID, contentFrame)
+    f:SetID(bagID)
+    f:SetAllPoints(contentFrame)
+    virtualBags[bagID] = f
+    return f
+end
 
 local function FormatMoney(amount)
     if not amount or amount <= 0 then return "" end
@@ -187,12 +195,24 @@ local function SetOverlayStyle(overlay, borderColor, labelColor, letter)
 end
 
 local function CustomItemButton_Update(slotFrame, bagID, slotID)
+    if ContainerFrameItemButton_Update then
+        ContainerFrameItemButton_Update(slotFrame)
+    end
+
     local texture, count = GetContainerItemInfo(bagID, slotID)
     local iconTex = _G[slotFrame:GetName().."IconTexture"]
     local countTex = _G[slotFrame:GetName().."Count"]
     
-    if texture then iconTex:SetTexture(texture) iconTex:Show() else iconTex:Hide() end
-    if count and count > 1 then countTex:SetText(count) countTex:Show() else countTex:Hide() end
+    if texture then 
+        if iconTex then iconTex:SetTexture(texture) iconTex:Show() end
+    else 
+        if iconTex then iconTex:Hide() end
+        if slotFrame.BagTagsOverlay then slotFrame.BagTagsOverlay:Hide() end
+        if countTex then countTex:Hide() end
+        return
+    end
+
+    if count and count > 1 then if countTex then countTex:SetText(count) countTex:Show() end else if countTex then countTex:Hide() end end
 
     local link = GetContainerItemLink(bagID, slotID)
     if not link or not BagTagsConfig then
@@ -200,7 +220,6 @@ local function CustomItemButton_Update(slotFrame, bagID, slotID)
         return
     end
 
-    -- USUNIĘTO TAGOWANIE LITERKĄ "Q" DLA PRZEDMIOTÓW QUESTOWYCH (KATEGORIA WYSTARCZY)
     local itemName, _, quality, _, _, itemType, _, _, _, _, itemVendorPrice = GetItemInfo(link)
     if not quality then quality = 0 end
 
@@ -285,10 +304,14 @@ end
 function BT.InventoryModule:UpdateLayout()
     if not mainFrame:IsShown() then return end
     
+    -- Ukrywamy sekcje oraz wszystkie możliwe przyciski w puli
     for _, section in pairs(contentFrame.sections) do
         section:Hide()
-        if section.slots then 
-            for _, slotFrame in pairs(section.slots) do slotFrame:Hide() end 
+    end
+    for b = 0, 4 do
+        for s, btn in pairs(poolButtons[b]) do
+            btn:Hide()
+            if btn.BagTagsOverlay then btn.BagTagsOverlay:Hide() end
         end
     end
     
@@ -335,7 +358,6 @@ function BT.InventoryModule:UpdateLayout()
             
             if not section then
                 section = CreateFrame("Frame", nil, contentFrame)
-                section.slots = {}
                 
                 local header = CreateFrame("Button", nil, section)
                 header:SetSize(355, 20)
@@ -370,7 +392,6 @@ function BT.InventoryModule:UpdateLayout()
                 section.header.text:SetTextColor(1, 0.82, 0) 
             end
             
-            -- WYJĄTEK: Ukrywanie wartości Vendor dla kategorii "Quest"
             local goldText = ""
             local totalValue = categoryValues[catName] or 0
             if totalValue > 0 and catName ~= "Quest" then
@@ -386,17 +407,17 @@ function BT.InventoryModule:UpdateLayout()
             local sectionHeight = 20
             if not isCollapsed then
                 for index, itemInfo in ipairs(itemDataList) do
-                    local slotFrame = section.slots[index]
-                    if not slotFrame then
-                        local slotName = "BagTagsSlotButton_" .. globalSlotCounter
-                        globalSlotCounter = globalSlotCounter + 1
-                        slotFrame = CreateFrame("Button", slotName, section, "ContainerFrameItemButtonTemplate")
-                        section.slots[index] = slotFrame
-                    end
+                    local bID = itemInfo.bag
+                    local sID = itemInfo.slot
                     
-                    slotFrame:SetID(itemInfo.slot)
-                    local parentFrame = slotFrame:GetParent()
-                    parentFrame:SetID(itemInfo.bag)
+                    local slotFrame = poolButtons[bID][sID]
+                    if not slotFrame then
+                        local vBag = GetOrCreateVirtualBag(bID)
+                        local slotName = "BagTagsSlotButton_B" .. bID .. "_S" .. sID
+                        slotFrame = CreateFrame("Button", slotName, vBag, "ContainerFrameItemButtonTemplate")
+                        slotFrame:SetID(sID)
+                        poolButtons[bID][sID] = slotFrame
+                    end
                     
                     local row = math.floor((index - 1) / COLUMNS)
                     local col = (index - 1) % COLUMNS
@@ -404,8 +425,9 @@ function BT.InventoryModule:UpdateLayout()
                     slotFrame:ClearAllPoints()
                     slotFrame:SetPoint("TOPLEFT", section, "TOPLEFT", col * SLOT_SIZE, -(20 + (row * SLOT_SIZE)))
                     slotFrame:SetSize(32, 32)
+                    slotFrame:SetFrameLevel(section:GetFrameLevel() + 2)
                     
-                    CustomItemButton_Update(slotFrame, itemInfo.bag, itemInfo.slot)
+                    CustomItemButton_Update(slotFrame, bID, sID)
                     
                     local iconTex = _G[slotFrame:GetName().."IconTexture"]
                     if iconTex then iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92) end
@@ -420,7 +442,6 @@ function BT.InventoryModule:UpdateLayout()
     end
     
     contentFrame:SetHeight(math.abs(currentY))
-    
     local maxScroll = math.max(0, math.abs(currentY) - scrollFrame:GetHeight())
     customScrollBar:SetMinMaxValues(0, maxScroll)
     
@@ -443,18 +464,33 @@ local function CloseBlizz()
     end
 end
 
-hooksecurefunc("OpenAllBags", function() CloseBlizz() BT.InventoryModule:ShowFrame() end)
-hooksecurefunc("OpenBackpack", function() CloseBlizz() BT.InventoryModule:ShowFrame() end)
-hooksecurefunc("ToggleBag", function() CloseBlizz() BT.InventoryModule:ToggleFrame() end)
-hooksecurefunc("CloseAllBags", function() BT.InventoryModule:HideFrame() end)
-hooksecurefunc("CloseBackpack", function() BT.InventoryModule:HideFrame() end)
+-- AGRESYWNE NADPISANIE FUNKCJI BLIZZARDA DLA KLUCZA "B" I "SHIFT+B"
+ToggleBackpack = function() BT.InventoryModule:ToggleFrame() CloseBlizz() end
+ToggleBag = function() BT.InventoryModule:ToggleFrame() CloseBlizz() end
+OpenAllBags = function() BT.InventoryModule:ShowFrame() CloseBlizz() end
+OpenBackpack = function() BT.InventoryModule:ShowFrame() CloseBlizz() end
+CloseAllBags = function() BT.InventoryModule:HideFrame() end
+CloseBackpack = function() BT.InventoryModule:HideFrame() end
+ToggleAllBags = function() BT.InventoryModule:ToggleFrame() CloseBlizz() end
+
+-- Blokowanie domyślnych ramek przy interakcji z bankiem/poczta/AH
+local parentHook = CreateFrame("Frame")
+parentHook:RegisterEvent("BANKFRAME_OPENED")
+parentHook:RegisterEvent("MAIL_SHOW")
+parentHook:RegisterEvent("AUCTION_HOUSE_SHOW")
+parentHook:SetScript("OnEvent", function() BT.InventoryModule:ShowFrame() CloseBlizz() end)
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function() table.wipe(knownItems) end)
 
+-- NAPRAWA ODŚWIEŻANIA PO TRANSAKCJACH I AUKCJACH
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("BAG_UPDATE")
+eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:SetScript("OnEvent", function() 
-    if mainFrame:IsShown() then BT.InventoryModule:UpdateLayout() end 
+    if mainFrame:IsShown() then 
+        BT.InventoryModule:UpdateLayout() 
+    end 
 end)
