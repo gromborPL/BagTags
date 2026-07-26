@@ -32,7 +32,7 @@ Your time, bug reports, testing sessions, and feedback were invaluable throughou
 
 ### Inventory Window
 - Added support for closing the BagTags inventory window with the **ESC** key.
-- Added automatic closing of the BagTags inventory window when entering combat.
+- Added automatic closing of the inventory window when entering combat.
 - Improved inventory window behavior to better match Blizzard UI standards.
 
 ### Inventory Interaction
