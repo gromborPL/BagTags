@@ -669,6 +669,85 @@ local function SetOverlayStyle(overlay, borderColor, labelColor, letter)
 	overlay:Show()
 end
 
+function BT:GetValueTag(bag, slot)
+    local link = self:SafeGetContainerItemLink(bag, slot)
+
+    if not link then
+        return nil
+    end
+
+    local itemName,
+        _,
+        quality,
+        _,
+        _,
+        itemType,
+        _,
+        _,
+        _,
+        _,
+        itemVendorPrice = GetItemInfo(link)
+
+    quality = quality or 0
+    local vendorPrice = itemVendorPrice or 0
+
+    if self:IsItemSoulbound(bag, slot) then
+        return "S"
+    end
+
+    local itemID = tonumber(string.match(link, "item:(%d+)"))
+
+    if itemID then
+        local current = (BT._currentCounts and BT._currentCounts[itemID]) or 0
+        local known = BT.knownItems[itemID] or 0
+
+        if current > known then
+            return "N"
+        end
+    end
+
+    local ahPrice = 0
+    local deValue = 0
+
+    if itemName then
+        if Atr_GetAuctionPrice then
+            local ok, value = pcall(Atr_GetAuctionPrice, itemName)
+
+            if ok then
+                ahPrice = value or 0
+            end
+        end
+
+        if Atr_GetDisenchantValue then
+            local ok, value = pcall(Atr_GetDisenchantValue, itemName)
+
+            if ok then
+                deValue = value or 0
+            end
+        end
+    end
+
+    local netAhPrice = ahPrice - (ahPrice * 0.05)
+
+    local bestValue = vendorPrice
+    local tag = "V"
+
+    if ahPrice > 0 and netAhPrice > vendorPrice then
+        bestValue = netAhPrice
+        tag = "A"
+    end
+
+    if BT.hasEnchanting
+        and (quality == 2 or quality == 3)
+        and (itemType == "Armor" or itemType == "Weapon")
+        and deValue > bestValue
+    then
+        tag = "D"
+    end
+
+    return tag
+end
+
 function BT:UpdateSlotOverlay(slotFrame, bagID, slotID)
     if not slotFrame then
         return
