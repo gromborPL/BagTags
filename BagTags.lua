@@ -61,40 +61,27 @@ function BT:RefreshTags()
 end
 
 function BT.InventoryModule:RefreshAllOverlays()
+	for frameIndex = 1, (NUM_CONTAINER_FRAMES or 13) do
+		local frame = _G["ContainerFrame" .. frameIndex]
 
-    for frameIndex = 1, (NUM_CONTAINER_FRAMES or 13) do
+		if frame and frame:IsShown() then
+			local size = frame.size or 0
+			local bagID = frame:GetID()
 
-        local frame = _G["ContainerFrame" .. frameIndex]
+			for itemIndex = 1, size do
+				local button = _G[frame:GetName() .. "Item" .. itemIndex]
 
-        if frame and frame:IsShown() then
+				if button and button:IsShown() then
+					local slotID = button:GetID()
 
-            local size = frame.size or 0
-            local bagID = frame:GetID()
-
-            for itemIndex = 1, size do
-
-                local button =
-                    _G[frame:GetName() .. "Item" .. itemIndex]
-
-                if button and button:IsShown() then
-
-                    local slotID = button:GetID()
-
-                    if slotID and slotID > 0 then
-
-                        BT:UpdateSlotOverlay(
-                            button,
-                            bagID,
-                            slotID
-                        )
-
-                    end
-                end
-            end
-        end
-    end
+					if slotID and slotID > 0 then
+						BT:UpdateSlotOverlay(button, bagID, slotID)
+					end
+				end
+			end
+		end
+	end
 end
-
 
 function BT:SetupOptions()
 	if isInitialized then
@@ -175,35 +162,35 @@ function BT:SetupOptions()
 
 	inventoryCheck:SetChecked(BagTagsConfig.useInventoryWindow)
 
-inventoryCheck:SetScript("OnClick", function(self)
-    BagTagsConfig.useInventoryWindow = not not self:GetChecked()
-end)
+	inventoryCheck:SetScript("OnClick", function(self)
+		BagTagsConfig.useInventoryWindow = not not self:GetChecked()
+	end)
 
-local opacitySlider = CreateFrame("Slider", "BagTagsOpacitySlider", panel, "OptionsSliderTemplate")
+	local opacitySlider = CreateFrame("Slider", "BagTagsOpacitySlider", panel, "OptionsSliderTemplate")
 
--- Opacity
-opacitySlider:SetPoint("TOPLEFT", inventoryCheck, "BOTTOMLEFT", 0, -40)
-opacitySlider:SetWidth(140)
-opacitySlider:SetMinMaxValues(0.1, 1.0)
-opacitySlider:SetValueStep(0.05)
-opacitySlider:SetValue(BagTagsConfig.opacity or 0.9)
+	-- Opacity
+	opacitySlider:SetPoint("TOPLEFT", inventoryCheck, "BOTTOMLEFT", 0, -40)
+	opacitySlider:SetWidth(140)
+	opacitySlider:SetMinMaxValues(0.1, 1.0)
+	opacitySlider:SetValueStep(0.05)
+	opacitySlider:SetValue(BagTagsConfig.opacity or 0.9)
 
-_G[opacitySlider:GetName() .. "Text"]:SetText("Opacity")
-_G[opacitySlider:GetName() .. "Low"]:SetText("0.1")
-_G[opacitySlider:GetName() .. "High"]:SetText("1.0")
+	_G[opacitySlider:GetName() .. "Text"]:SetText("Opacity")
+	_G[opacitySlider:GetName() .. "Low"]:SetText("0.1")
+	_G[opacitySlider:GetName() .. "High"]:SetText("1.0")
 
-opacitySlider:SetScript("OnValueChanged", function(self, value)
-    BagTagsConfig.opacity = value
+	opacitySlider:SetScript("OnValueChanged", function(self, value)
+		BagTagsConfig.opacity = value
 
-    if BT.InventoryModule and BT.InventoryModule.ApplyOpacity then
-        BT.InventoryModule:ApplyOpacity()
-    end
-end)
+		if BT.InventoryModule and BT.InventoryModule.ApplyOpacity then
+			BT.InventoryModule:ApplyOpacity()
+		end
+	end)
 
 	local scaleSlider = CreateFrame("Slider", "BagTagsScaleSlider", panel, "OptionsSliderTemplate")
 	-- Scale
-scaleSlider:SetPoint("TOPLEFT", inventoryCheck, "BOTTOMLEFT", 220, -40)
-scaleSlider:SetWidth(140)
+	scaleSlider:SetPoint("TOPLEFT", inventoryCheck, "BOTTOMLEFT", 220, -40)
+	scaleSlider:SetWidth(140)
 	scaleSlider:SetMinMaxValues(0.5, 1.5)
 	scaleSlider:SetValueStep(0.05)
 	scaleSlider:SetValue(BagTagsConfig.scale or 1.0)
@@ -303,37 +290,27 @@ function BT:SetupMinimap()
 
 	minimapButton:RegisterForClicks("AnyUp")
 
-minimapButton:SetScript("OnClick", function(self, button)
-
-    if button == "LeftButton" then
-
-        if BagTagsConfig and BagTagsConfig.useInventoryWindow then
-
-            BT:ToggleBagTags()
-
-        else
-
-            if OpenAllBags then
-                OpenAllBags()
-            elseif ToggleAllBags then
-                ToggleAllBags()
-            else
-                ToggleBackpack()
-            end
-
-        end
-
-    else
-
-        if InterfaceOptionsFrame_OpenToCategory then
-            InterfaceOptionsFrame_OpenToCategory("BagTags")
-        elseif Settings then
-            Settings.OpenToCategory("BagTags")
-        end
-
-    end
-
-end)
+	minimapButton:SetScript("OnClick", function(self, button)
+		if button == "LeftButton" then
+			if BagTagsConfig and BagTagsConfig.useInventoryWindow then
+				BT:ToggleBagTags()
+			else
+				if OpenAllBags then
+					OpenAllBags()
+				elseif ToggleAllBags then
+					ToggleAllBags()
+				else
+					ToggleBackpack()
+				end
+			end
+		else
+			if InterfaceOptionsFrame_OpenToCategory then
+				InterfaceOptionsFrame_OpenToCategory("BagTags")
+			elseif Settings then
+				Settings.OpenToCategory("BagTags")
+			end
+		end
+	end)
 
 	minimapButton:SetScript("OnEnter", function(self)
 		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
@@ -354,56 +331,79 @@ end
 local configFrame = CreateFrame("Frame")
 configFrame:RegisterEvent("ADDON_LOADED")
 configFrame:SetScript("OnEvent", function(self, event, arg1)
+	if arg1 ~= addonName then
+		return
+	end
 
-    if arg1 ~= addonName then
-        return
-    end
+	BagTagsConfig = BagTagsConfig or {}
 
-    BagTagsConfig = BagTagsConfig or {}
+	BagTagsConfig.positions = BagTagsConfig.positions or {}
+	BagTagsConfig.minimapPos = BagTagsConfig.minimapPos or 45
+	BagTagsConfig.opacity = BagTagsConfig.opacity or 0.9
+	BagTagsConfig.scale = BagTagsConfig.scale or 1.0
 
-    BagTagsConfig.positions = BagTagsConfig.positions or {}
-    BagTagsConfig.minimapPos = BagTagsConfig.minimapPos or 45
-    BagTagsConfig.opacity = BagTagsConfig.opacity or 0.9
-    BagTagsConfig.scale = BagTagsConfig.scale or 1.0
+	-- Migracja starych ustawień
+	if BagTagsConfig.showAuction == nil and BagTagsConfig.showMarket ~= nil then
+		BagTagsConfig.showAuction = BagTagsConfig.showMarket
+	end
 
-    -- Migracja starych ustawień
-    if BagTagsConfig.showAuction == nil and BagTagsConfig.showMarket ~= nil then
-        BagTagsConfig.showAuction = BagTagsConfig.showMarket
-    end
+	-- Domyślne ustawienia
+	if BagTagsConfig.showSoulbound == nil then
+		BagTagsConfig.showSoulbound = true
+	end
 
-    -- Domyślne ustawienia
-    if BagTagsConfig.showSoulbound == nil then
-        BagTagsConfig.showSoulbound = true
-    end
+	if BagTagsConfig.showAuction == nil then
+		BagTagsConfig.showAuction = true
+	end
 
-    if BagTagsConfig.showAuction == nil then
-        BagTagsConfig.showAuction = true
-    end
+	if BagTagsConfig.showDisenchant == nil then
+		BagTagsConfig.showDisenchant = true
+	end
 
-    if BagTagsConfig.showDisenchant == nil then
-        BagTagsConfig.showDisenchant = true
-    end
+	if BagTagsConfig.showVendor == nil then
+		BagTagsConfig.showVendor = true
+	end
 
-    if BagTagsConfig.showVendor == nil then
-        BagTagsConfig.showVendor = true
-    end
+	-- NOWA OPCJA
+	if BagTagsConfig.useInventoryWindow == nil then
+		BagTagsConfig.useInventoryWindow = true
+	end
 
-    -- NOWA OPCJA
-    if BagTagsConfig.useInventoryWindow == nil then
-        BagTagsConfig.useInventoryWindow = true
-    end
+	-- Usunięcie starej opcji po migracji
+	BagTagsConfig.showMarket = nil
 
-    -- Usunięcie starej opcji po migracji
-    BagTagsConfig.showMarket = nil
+	BT:CheckConflicts()
+	BT:SetupOptions()
+	BT:SetupMinimap()
+	BT:CheckProfessions()
 
-    BT:CheckConflicts()
-    BT:SetupOptions()
-    BT:SetupMinimap()
-    BT:CheckProfessions()
+	-- Ustaw baseline: traktujemy obecny stan ekwipunku jako "znany"
+	BT:SnapshotCurrentItems()
 
-    self:UnregisterEvent("ADDON_LOADED")
-
+	self:UnregisterEvent("ADDON_LOADED")
 end)
+
+-- Build current counts map: itemID -> total stack count across bags (0..4)
+function BT:BuildCurrentItemCounts()
+	BT._currentCounts = BT._currentCounts or {}
+	table.wipe(BT._currentCounts)
+
+	for bag = 0, 4 do
+		local numSlots = self:GetContainerNumSlots(bag) or 0
+		for slot = 1, numSlots do
+			local link = self:SafeGetContainerItemLink(bag, slot)
+			if link then
+				local itemID = tonumber(string.match(link, "item:(%d+)"))
+				if itemID then
+					local _, count = self:SafeGetContainerItemInfo(bag, slot)
+					-- jeśli API nie zwraca count, przyjmij 1
+					count = (count and count > 0) and count or 1
+					BT._currentCounts[itemID] = (BT._currentCounts[itemID] or 0) + count
+				end
+			end
+		end
+	end
+end
 
 -- Zwraca zawsze dwa argumenty: (texture, count)
 
@@ -495,16 +495,20 @@ function BT:GetSlotKey(bag, slot)
 	return string.format("%d_%d_%s", bag, slot, itemID or "0")
 end
 
+-- Snapshot known items by itemID (baseline używany do oznaczania nowych)
 function BT:SnapshotCurrentItems()
 	table.wipe(BT.knownItems)
 	for bag = 0, 4 do
-		local numSlots = (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerNumSlots(bag))
-			or (GetContainerNumSlots and GetContainerNumSlots(bag))
-			or 0
+		local numSlots = self:GetContainerNumSlots(bag) or 0
 		for slot = 1, numSlots do
-			local key = self:GetSlotKey(bag, slot)
-			if key then
-				BT.knownItems[key] = true
+			local link = self:SafeGetContainerItemLink(bag, slot)
+			if link then
+				local itemID = tonumber(string.match(link, "item:(%d+)"))
+				if itemID then
+					local _, count = self:SafeGetContainerItemInfo(bag, slot)
+					count = (count and count > 0) and count or 1
+					BT.knownItems[itemID] = (BT.knownItems[itemID] or 0) + count
+				end
 			end
 		end
 	end
@@ -516,11 +520,17 @@ function BT:GetItemTag(bag, slot)
 		return nil
 	end
 
-	local key = self:GetSlotKey(bag, slot)
-	if key and not BT.knownItems[key] then
-		return "New Items"
+	-- Jeśli mamy itemID i policzone current/known, oznacz jako "New Items" gdy current > known
+	local itemID = tonumber(string.match(link, "item:(%d+)"))
+	if itemID then
+		local current = (BT._currentCounts and BT._currentCounts[itemID]) or 0
+		local known = BT.knownItems[itemID] or 0
+		if current > known then
+			return "New Items"
+		end
 	end
 
+	-- dalej klasyfikacja według itemClass (bez zmian)
 	local _, _, _, _, _, itemClass = GetItemInfo(link)
 	if itemClass == "Consumable" or itemClass == "Materiały eksploatacyjne" then
 		return "Consumables"
@@ -606,120 +616,130 @@ local function SetOverlayStyle(overlay, borderColor, labelColor, letter)
 end
 
 function BT:UpdateSlotOverlay(slotFrame, bagID, slotID)
-	if not slotFrame then
-		return
-	end
+    if not slotFrame then
+        return
+    end
 
-	if slotFrame.BagTagsOverlay then
-		slotFrame.BagTagsOverlay:Hide()
-	end
+    if slotFrame.BagTagsOverlay then
+        slotFrame.BagTagsOverlay:Hide()
+    end
 
-	local texture = select(1, BT:GetContainerItemInfo(bagID, slotID))
+    local texture = select(1, BT:GetContainerItemInfo(bagID, slotID))
 
-	if not texture then
-		return
-	end
+    if not texture then
+        return
+    end
 
-	local link = BT:SafeGetContainerItemLink(bagID, slotID)
+    local link = BT:SafeGetContainerItemLink(bagID, slotID)
 
-	if not link or not BagTagsConfig then
-		return
-	end
+    if not link or not BagTagsConfig then
+        return
+    end
 
-	local itemName = GetItemInfo(link)
+    local itemName = GetItemInfo(link)
 
-if itemName and string.find(itemName, "Soul") then
-    print(
-        "ITEM:",
-        itemName,
-        "SOULBOUND:",
-        tostring(BT:IsItemSoulbound(bagID, slotID))
-    )
-end
+    local itemName, _, quality, _, _, itemType, _, _, _, _, itemVendorPrice = GetItemInfo(link)
+    quality = quality or 0
 
-	local itemName, _, quality, _, _, itemType, _, _, _, _, itemVendorPrice = GetItemInfo(link)
-	quality = quality or 0
+    -- Soulbound ma priorytet
+    if BT:IsItemSoulbound(bagID, slotID) and BagTagsConfig.showSoulbound then
+        local overlay = GetOrCreateOverlay(slotFrame)
+        SetOverlayStyle(overlay, { r = 0.53, g = 0.12, b = 0.77, a = 1 }, { r = 0.90, g = 0.60, b = 1.0, a = 1 }, "S")
+        return
+    end
 
-	if BT:IsItemSoulbound(bagID, slotID) and BagTagsConfig.showSoulbound then
-		local overlay = GetOrCreateOverlay(slotFrame)
-		SetOverlayStyle(overlay, { r = 0.53, g = 0.12, b = 0.77, a = 1 }, { r = 0.90, g = 0.60, b = 1.0, a = 1 }, "S")
-		return
-	end
+    -- Upewnij się, że mamy mapę bieżących ilości (zwykle zrobiona raz w RefreshAllOverlays)
+    if not BT._currentCounts then
+        BT:BuildCurrentItemCounts()
+    end
 
-	local ahPrice = 0
-	local deValue = 0
+    -- Sprawdź czy to NOWY item (porównanie total count według itemID)
+    local itemID = tonumber(string.match(link, "item:(%d+)"))
+    if itemID then
+        local current = (BT._currentCounts and BT._currentCounts[itemID]) or 0
+        local known = BT.knownItems[itemID] or 0
+        if current > known then
+            local overlay = GetOrCreateOverlay(slotFrame)
+            -- kolor: pomarańczowy/żółty dla "N"
+            SetOverlayStyle(overlay, { r = 1.0, g = 0.5, b = 0.0, a = 1 }, { r = 1.0, g = 0.95, b = 0.6, a = 1 }, "N")
+            return
+        end
+    end
 
-	if itemName then
-		if Atr_GetAuctionPrice then
-			local ok, value = pcall(Atr_GetAuctionPrice, itemName)
-			if ok then
-				ahPrice = value or 0
-			end
-		end
+    local ahPrice = 0
+    local deValue = 0
 
-		if Atr_GetDisenchantValue then
-			local ok, value = pcall(Atr_GetDisenchantValue, itemName)
-			if ok then
-				deValue = value or 0
-			end
-		end
-	end
+    if itemName then
+        if Atr_GetAuctionPrice then
+            local ok, value = pcall(Atr_GetAuctionPrice, itemName)
+            if ok then
+                ahPrice = value or 0
+            end
+        end
 
-	local vendorPrice = itemVendorPrice or 0
+        if Atr_GetDisenchantValue then
+            local ok, value = pcall(Atr_GetDisenchantValue, itemName)
+            if ok then
+                deValue = value or 0
+            end
+        end
+    end
 
-	local netAhPrice = ahPrice - (ahPrice * 0.05)
-	local currentTag = "NONE"
-	local maxEffectiveValue = vendorPrice
+    local vendorPrice = itemVendorPrice or 0
 
-	-- Auction House
-	if BagTagsConfig.showAuction and ahPrice > 0 and netAhPrice > vendorPrice then
-		maxEffectiveValue = netAhPrice
-		currentTag = "A"
-	end
+    local netAhPrice = ahPrice - (ahPrice * 0.05)
+    local currentTag = "NONE"
+    local maxEffectiveValue = vendorPrice
 
-	-- Disenchant
-	if
-		BagTagsConfig.showDisenchant
-		and BT.hasEnchanting
-		and (quality == 2 or quality == 3)
-		and (itemType == "Armor" or itemType == "Weapon")
-	then
-		if deValue > maxEffectiveValue and deValue > vendorPrice then
-			maxEffectiveValue = deValue
-			currentTag = "D"
-		end
-	end
+    -- Auction House
+    if BagTagsConfig.showAuction and ahPrice > 0 and netAhPrice > vendorPrice then
+        maxEffectiveValue = netAhPrice
+        currentTag = "A"
+    end
 
-	-- Vendor
-	if currentTag == "NONE" and vendorPrice > 0 then
-		currentTag = "V"
-	end
+    -- Disenchant
+    if
+        BagTagsConfig.showDisenchant
+        and BT.hasEnchanting
+        and (quality == 2 or quality == 3)
+        and (itemType == "Armor" or itemType == "Weapon")
+    then
+        if deValue > maxEffectiveValue and deValue > vendorPrice then
+            maxEffectiveValue = deValue
+            currentTag = "D"
+        end
+    end
 
-	if currentTag == "A" and BagTagsConfig.showAuction then
-		local overlay = GetOrCreateOverlay(slotFrame)
+    -- Vendor
+    if currentTag == "NONE" and vendorPrice > 0 then
+        currentTag = "V"
+    end
 
-		SetOverlayStyle(overlay, { r = 0.1, g = 1, b = 0.1, a = 1 }, { r = 0.4, g = 1, b = 0.4, a = 1 }, "A")
+    if currentTag == "A" and BagTagsConfig.showAuction then
+        local overlay = GetOrCreateOverlay(slotFrame)
 
-		return
-	elseif currentTag == "D" and BagTagsConfig.showDisenchant then
-		local overlay = GetOrCreateOverlay(slotFrame)
+        SetOverlayStyle(overlay, { r = 0.1, g = 1, b = 0.1, a = 1 }, { r = 0.4, g = 1, b = 0.4, a = 1 }, "A")
 
-		SetOverlayStyle(overlay, { r = 0.8, g = 0.3, b = 0.8, a = 1 }, { r = 1.0, g = 0.5, b = 1.0, a = 1 }, "D")
+        return
+    elseif currentTag == "D" and BagTagsConfig.showDisenchant then
+        local overlay = GetOrCreateOverlay(slotFrame)
 
-		return
-	elseif currentTag == "V" and BagTagsConfig.showVendor then
-		local overlay = GetOrCreateOverlay(slotFrame)
+        SetOverlayStyle(overlay, { r = 0.8, g = 0.3, b = 0.8, a = 1 }, { r = 1.0, g = 0.5, b = 1.0, a = 1 }, "D")
 
-		SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
+        return
+    elseif currentTag == "V" and BagTagsConfig.showVendor then
+        local overlay = GetOrCreateOverlay(slotFrame)
 
-		return
-	end
+        SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
 
-	if quality == 0 and BagTagsConfig.showVendor then
-		local overlay = GetOrCreateOverlay(slotFrame)
-		SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
-		return
-	end
+        return
+    end
+
+    if quality == 0 and BagTagsConfig.showVendor then
+        local overlay = GetOrCreateOverlay(slotFrame)
+        SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
+        return
+    end
 end
 
 function BT:FormatMoney(amount)
@@ -748,43 +768,79 @@ overlayEvents:RegisterEvent("BAG_UPDATE")
 overlayEvents:RegisterEvent("BAG_UPDATE_DELAYED")
 
 overlayEvents:SetScript("OnEvent", function()
-
-    if BT.InventoryModule
-        and BT.InventoryModule.RefreshAllOverlays then
-
-        BT.InventoryModule:RefreshAllOverlays()
-    end
-
+	if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then
+		BT.InventoryModule:RefreshAllOverlays()
+	end
 end)
 
 if type(OpenBackpack) == "function" then
-    hooksecurefunc("OpenBackpack", function()
-
-        C_Timer.After(0.1, function()
-
-            if BT.InventoryModule
-                and BT.InventoryModule.RefreshAllOverlays then
-
-                BT.InventoryModule:RefreshAllOverlays()
-            end
-
-        end)
-
-    end)
+	hooksecurefunc("OpenBackpack", function()
+		C_Timer.After(0.1, function()
+			if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then
+				BT.InventoryModule:RefreshAllOverlays()
+			end
+		end)
+	end)
 end
 
 if type(OpenAllBags) == "function" then
-    hooksecurefunc("OpenAllBags", function()
+	hooksecurefunc("OpenAllBags", function()
+		C_Timer.After(0.1, function()
+			if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then
+				BT.InventoryModule:RefreshAllOverlays()
+			end
+		end)
+	end)
+end
 
-        C_Timer.After(0.1, function()
+local autoSnapshotFrame = CreateFrame("Frame")
+autoSnapshotFrame:RegisterEvent("LOOT_CLOSED")
+autoSnapshotFrame:RegisterEvent("MERCHANT_CLOSED")
+autoSnapshotFrame:SetScript("OnEvent", function(self, event)
+    if BT and BT.SnapshotCurrentItems then
+        BT:SnapshotCurrentItems()
+        if BT.BuildCurrentItemCounts then BT:BuildCurrentItemCounts() end
+        if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then BT.InventoryModule:RefreshAllOverlays() end
+        -- bez printów: usuń poniższy print jeśli nie chcesz komunikatów
+        print("BagTags: snapshot wykonany po zdarzeniu:", event)
+    end
+end)
 
-            if BT.InventoryModule
-                and BT.InventoryModule.RefreshAllOverlays then
+-- prosty CLI do testów i ręcznego ustawiania snapshotu
+SLASH_BAGTAGS1 = "/bagtags"
+SlashCmdList["BAGTAGS"] = function(msg)
+    local cmd, arg = msg:match("^(%S*)%s*(.-)$")
+    if cmd == "snapshot" or cmd == "markread" then
+        if BT and BT.SnapshotCurrentItems then
+            BT:SnapshotCurrentItems()
+            print("BagTags: snapshot wykonany (wszystkie przedmioty oznaczone jako znane).")
+            if BT.BuildCurrentItemCounts then BT:BuildCurrentItemCounts() end
+            if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then BT.InventoryModule:RefreshAllOverlays() end
+        else
+            print("BagTags: funkcja SnapshotCurrentItems nieznaleziona.")
+        end
+        return
+    end
 
-                BT.InventoryModule:RefreshAllOverlays()
-            end
+    if cmd == "refresh" then
+        if BT and BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then
+            BT.InventoryModule:RefreshAllOverlays()
+            print("BagTags: odświeżono nakładki.")
+        else
+            print("BagTags: RefreshAllOverlays niedostępne.")
+        end
+        return
+    end
 
-        end)
+    if cmd == "show" and tonumber(arg) then
+        local id = tonumber(arg)
+        local cur = (BT._currentCounts and BT._currentCounts[id]) or 0
+        local known = (BT.knownItems and BT.knownItems[id]) or 0
+        print(("BagTags: itemID=%d current=%d known=%d"):format(id, cur, known))
+        return
+    end
 
-    end)
+    print("/bagtags snapshot|markread  — oznacz aktualne jako znane")
+    print("/bagtags refresh              — wymuś odświeżenie nakładek")
+    print("/bagtags show <itemID>        — pokaż current/known dla itemID")
 end
