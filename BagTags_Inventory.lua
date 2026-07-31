@@ -389,95 +389,95 @@ function module:UpdateLayout()
 
 						-- TWORZENIE BEZPIECZNEGO PRZYCISKU (SecureActionButtonTemplate)
 						slotFrame = CreateFrame("Button", slotName, section, "ItemButtonTemplate, SecureActionButtonTemplate")
-+
-+						-- Rejestrujemy kliknięcia; zachowaj PPM jako secure "item" (umożliwia użycie)
-+						slotFrame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-+						slotFrame:SetAttribute("type2", "item")
-+
-+						-- OnMouseUp: obsługa LPM (pickup), umieszczania z kursora, modified-click,
-+						-- oraz Shift+LPM gdy otwarty vendor -> natychmiastowa sprzedaż (SellCursorItem)
-+						slotFrame:SetScript("OnMouseUp", function(self, button)
-+							local bID = self.bagID or self.bag
-+							local sID = self.slotID or self.slot
-+							if not bID or not sID then
-+								return
-+							end
-+
-+							local link = BT and BT.SafeGetContainerItemLink and BT:SafeGetContainerItemLink(bID, sID)
-+
-+							-- Shift+LeftButton + MerchantFrame visible -> sell item immediately
-+							if IsShiftKeyDown() and button == "LeftButton" and (MerchantFrame and MerchantFrame:IsShown()) then
-+								if not link then return end
-+
-+								-- pick up item to cursor
-+								if C_Container and C_Container.PickupContainerItem then
-+									C_Container.PickupContainerItem(bID, sID)
-+								else
-+									PickupContainerItem(bID, sID)
-+								end
-+
-+								-- sell it to vendor
-+								if SellCursorItem then
-+									SellCursorItem()
-+								else
-+									-- fallback: clear cursor if SellCursorItem unavailable
-+									ClearCursor()
-+								end
-+								return
-+							end
-+
-+							-- Other modified-clicks -> standard modified handler
-+							if IsShiftKeyDown() or IsControlKeyDown() or IsAltKeyDown() then
-+								if link then HandleModifiedItemClick(link) end
-+								return
-+							end
-+
-+							-- If there's an item on cursor, put it into this slot (swap/put)
-+							local cursorType = select(1, GetCursorInfo())
-+							if cursorType == "item" then
-+								if C_Container and C_Container.PickupContainerItem then
-+									C_Container.PickupContainerItem(bID, sID)
-+								else
-+									PickupContainerItem(bID, sID)
-+								end
-+								return
-+							end
-+
-+							-- Cursor empty: LeftButton picks up the item
-+							if button == "LeftButton" then
-+								if C_Container and C_Container.PickupContainerItem then
-+									C_Container.PickupContainerItem(bID, sID)
-+								else
-+									PickupContainerItem(bID, sID)
-+								end
-+								return
-+							end
-+							-- RightButton + empty cursor: do nothing here (secure type2="item" will handle use)
-+						end)
-+
-+						-- Drag oraz tooltipy
-+						slotFrame:SetScript("OnDragStart", function(self)
-+							if self.bagID and self.slotID then
-+								if C_Container and C_Container.PickupContainerItem then
-+									C_Container.PickupContainerItem(self.bagID, self.slotID)
-+								else
-+									PickupContainerItem(self.bagID, self.slotID)
-+								end
-+							end
-+						end)
-+
-+						slotFrame:SetScript("OnEnter", function(self)
-+							local link = BT and BT.SafeGetContainerItemLink and BT:SafeGetContainerItemLink(self.bagID, self.slotID)
-+							if link then
-+								GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-+								GameTooltip:SetHyperlink(link)
-+								GameTooltip:Show()
-+							end
-+						end)
-+
-+						slotFrame:SetScript("OnLeave", function()
-+							GameTooltip:Hide()
-+						end)
+
+						-- Rejestrujemy kliknięcia; zachowaj PPM jako secure "item" (umożliwia użycie)
+						slotFrame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+						slotFrame:SetAttribute("type2", "item")
+
+						-- OnMouseUp: obsługa LPM (pickup), umieszczania z kursora, modified-click,
+						-- oraz ShiftLPM gdy otwarty vendor -> natychmiastowa sprzedaż (SellCursorItem)
+						slotFrame:SetScript("OnMouseUp", function(self, button)
+							local bID = self.bagID or self.bag
+							local sID = self.slotID or self.slot
+							if not bID or not sID then
+								return
+							end
+
+							local link = BT and BT.SafeGetContainerItemLink and BT:SafeGetContainerItemLink(bID, sID)
+
+							-- ShiftLeftButton  MerchantFrame visible -> sell item immediately
+							if IsShiftKeyDown() and button == "LeftButton" and (MerchantFrame and MerchantFrame:IsShown()) then
+								if not link then return end
+
+								-- pick up item to cursor
+								if C_Container and C_Container.PickupContainerItem then
+									C_Container.PickupContainerItem(bID, sID)
+								else
+									PickupContainerItem(bID, sID)
+								end
+
+								-- sell it to vendor
+								if SellCursorItem then
+									SellCursorItem()
+								else
+									-- fallback: clear cursor if SellCursorItem unavailable
+									ClearCursor()
+								end
+								return
+							end
+
+							-- Other modified-clicks -> standard modified handler
+							if IsShiftKeyDown() or IsControlKeyDown() or IsAltKeyDown() then
+								if link then HandleModifiedItemClick(link) end
+								return
+							end
+
+							-- If there's an item on cursor, put it into this slot (swap/put)
+							local cursorType = select(1, GetCursorInfo())
+							if cursorType == "item" then
+								if C_Container and C_Container.PickupContainerItem then
+									C_Container.PickupContainerItem(bID, sID)
+								else
+									PickupContainerItem(bID, sID)
+								end
+								return
+							end
+
+							-- Cursor empty: LeftButton picks up the item
+							if button == "LeftButton" then
+								if C_Container and C_Container.PickupContainerItem then
+									C_Container.PickupContainerItem(bID, sID)
+								else
+									PickupContainerItem(bID, sID)
+								end
+								return
+							end
+							-- RightButton  empty cursor: do nothing here (secure type2="item" will handle use)
+						end)
+
+						-- Drag oraz tooltipy
+						slotFrame:SetScript("OnDragStart", function(self)
+							if self.bagID and self.slotID then
+								if C_Container and C_Container.PickupContainerItem then
+									C_Container.PickupContainerItem(self.bagID, self.slotID)
+								else
+									PickupContainerItem(self.bagID, self.slotID)
+								end
+							end
+						end)
+
+						slotFrame:SetScript("OnEnter", function(self)
+							local link = BT and BT.SafeGetContainerItemLink and BT:SafeGetContainerItemLink(self.bagID, self.slotID)
+							if link then
+								GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+								GameTooltip:SetHyperlink(link)
+								GameTooltip:Show()
+							end
+						end)
+
+						slotFrame:SetScript("OnLeave", function()
+							GameTooltip:Hide()
+						end)
 
  						poolButtons[slotKey] = slotFrame
 					end

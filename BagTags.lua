@@ -748,6 +748,7 @@ function BT:GetValueTag(bag, slot)
     return tag
 end
 
+-- Zastąp istniejącą funkcję BT:UpdateSlotOverlay tą wersją (prosta, deterministyczna logika merchant)
 function BT:UpdateSlotOverlay(slotFrame, bagID, slotID)
     if not slotFrame then
         return
@@ -768,146 +769,94 @@ function BT:UpdateSlotOverlay(slotFrame, bagID, slotID)
     end
 
     local itemName, _, quality, _, _, itemType, _, _, _, _, itemVendorPrice = GetItemInfo(link)
-
     quality = quality or 0
     local vendorPrice = itemVendorPrice or 0
 
-    -- Soulbound ma najwyższy priorytet
+    -- Soulbound ma najwyższy priorytet (bez zmian)
     if BagTagsConfig.showSoulbound and BT:IsItemSoulbound(bagID, slotID) then
         local overlay = GetOrCreateOverlay(slotFrame)
-
-        SetOverlayStyle(
-            overlay,
-            { r = 0.53, g = 0.12, b = 0.77, a = 1 },
-            { r = 0.90, g = 0.60, b = 1.0, a = 1 },
-            "S"
-        )
-
+        SetOverlayStyle(overlay, { r = 0.53, g = 0.12, b = 0.77, a = 1 }, { r = 0.90, g = 0.60, b = 1.0, a = 1 }, "S")
         return
     end
 
-    -- Upewnij się, że istnieje mapa aktualnych ilości
+    -- Ensure counts exist for "New Items"
     if not BT._currentCounts then
         BT:BuildCurrentItemCounts()
     end
 
-    -- New Items
+    -- New Items (bez zmian)
     local itemID = tonumber(string.match(link, "item:(%d+)"))
-
     if itemID then
         local current = (BT._currentCounts and BT._currentCounts[itemID]) or 0
         local known = BT.knownItems[itemID] or 0
-
         if current > known then
             local overlay = GetOrCreateOverlay(slotFrame)
-
-            SetOverlayStyle(
-                overlay,
-                { r = 1.0, g = 0.5, b = 0.0, a = 1 },
-                { r = 1.0, g = 0.95, b = 0.6, a = 1 },
-                "N"
-            )
-
+            SetOverlayStyle(overlay, { r = 1.0, g = 0.5, b = 0.0, a = 1 }, { r = 1.0, g = 0.95, b = 0.6, a = 1 }, "N")
             return
         end
     end
 
-    -- Porównanie wartości: AH vs Vendor vs Disenchant
+    -- Pobierz ceny (zewnętrzne funkcje, bez zmian)
     local ahPrice = 0
     local deValue = 0
-
     if itemName then
         if Atr_GetAuctionPrice then
             local ok, value = pcall(Atr_GetAuctionPrice, itemName)
-            if ok then
-                ahPrice = value or 0
-            end
+            if ok then ahPrice = value or 0 end
         end
-
         if Atr_GetDisenchantValue then
             local ok, value = pcall(Atr_GetDisenchantValue, itemName)
-            if ok then
-                deValue = value or 0
-            end
+            if ok then deValue = value or 0 end
         end
     end
 
-    local netAhPrice = ahPrice - (ahPrice * 0.05)
-    local currentTag = "NONE"
-    local maxEffectiveValue = vendorPrice
+    -- Prosta, jednoznaczna reguła wyboru taga:
+    -- 1) Porównaj trzech kandydatów: vendorPrice, netAhPrice (95%), deValue.
+    -- 2) Wybierz najwyższą efektywną wartość, z zastrzeżeniami:
+    --    - D można brać pod uwagę tylko gdy mamy enchanting i item jest Armor/Weapon i quality w [2,3].
+    --    - Pokazuj tylko te tagi, które są w ustawieniach (showAuction/showDisenchant/showVendor).
+    local netAh = (ahPrice or 0) * 0.95
+    local bestValue = vendorPrice or 0
+    local chosen = nil
 
-    -- Auction House
-    if BagTagsConfig.showAuction and ahPrice > 0 and netAhPrice > vendorPrice then
-        maxEffectiveValue = netAhPrice
-        currentTag = "A"
+    -- Auction
+    if BagTagsConfig.showAuction and netAh > bestValue and netAh > 0 then
+        bestValue = netAh
+        chosen = "A"
     end
 
-    -- Disenchant
-    if BagTagsConfig.showDisenchant
-        and BT.hasEnchanting
-        and (quality == 2 or quality == 3)
-        and (itemType == "Armor" or itemType == "Weapon")
-    then
-        if deValue > maxEffectiveValue and deValue > vendorPrice then
-            maxEffectiveValue = deValue
-            currentTag = "D"
-        end
+    -- Disenchant (tylko gdy sensowne)
+    if BagTagsConfig.showDisenchant and BT.hasEnchanting and (quality == 2 or quality == 3)
+       and (itemType == "Armor" or itemType == "Weapon")
+       and deValue > bestValue and deValue > 0 then
+        bestValue = deValue
+        chosen = "D"
     end
 
-    -- Vendor fallback
-    if currentTag == "NONE" and vendorPrice > 0 then
-        currentTag = "V"
+    -- Vendor fallback (wybierz Vendor gdy nic lepszego nie było)
+    if BagTagsConfig.showVendor and chosen == nil and vendorPrice > 0 then
+        chosen = "V"
     end
 
-    -- Render tagów
-    if currentTag == "A" and BagTagsConfig.showAuction then
+    -- Rysowanie prostych tagów
+    if chosen == "A" then
         local overlay = GetOrCreateOverlay(slotFrame)
-
-        SetOverlayStyle(
-            overlay,
-            { r = 0.1, g = 1, b = 0.1, a = 1 },
-            { r = 0.4, g = 1, b = 0.4, a = 1 },
-            "A"
-        )
-
+        SetOverlayStyle(overlay, { r = 0.1, g = 1, b = 0.1, a = 1 }, { r = 0.4, g = 1, b = 0.4, a = 1 }, "A")
         return
-
-    elseif currentTag == "D" and BagTagsConfig.showDisenchant then
+    elseif chosen == "D" then
         local overlay = GetOrCreateOverlay(slotFrame)
-
-        SetOverlayStyle(
-            overlay,
-            { r = 0.8, g = 0.3, b = 0.8, a = 1 },
-            { r = 1.0, g = 0.5, b = 1.0, a = 1 },
-            "D"
-        )
-
+        SetOverlayStyle(overlay, { r = 0.8, g = 0.3, b = 0.8, a = 1 }, { r = 1.0, g = 0.5, b = 1.0, a = 1 }, "D")
         return
-
-    elseif currentTag == "V" and BagTagsConfig.showVendor then
+    elseif chosen == "V" then
         local overlay = GetOrCreateOverlay(slotFrame)
-
-        SetOverlayStyle(
-            overlay,
-            { r = 0.9, g = 0.8, b = 0.2, a = 1 },
-            { r = 1.0, g = 0.9, b = 0.4, a = 1 },
-            "V"
-        )
-
+        SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
         return
     end
 
-    -- Dodatkowy fallback dla poor quality
+    -- Opcjonalny fallback: poor quality -> Vendor (jeśli włączone)
     if quality == 0 and BagTagsConfig.showVendor then
         local overlay = GetOrCreateOverlay(slotFrame)
-
-        SetOverlayStyle(
-            overlay,
-            { r = 0.9, g = 0.8, b = 0.2, a = 1 },
-            { r = 1.0, g = 0.9, b = 0.4, a = 1 },
-            "V"
-        )
-
+        SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
         return
     end
 end
