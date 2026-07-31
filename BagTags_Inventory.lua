@@ -159,19 +159,17 @@ eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED")
 eventFrame:RegisterEvent("SKILL_LINES_CHANGED")
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
+	if event == "PLAYER_REGEN_DISABLED" then
+		local mod = BT.InventoryModule
 
-    if event == "PLAYER_REGEN_DISABLED" then
+		if mod and mod.mainFrame and mod.mainFrame:IsShown() then
+			mod:HideFrame()
+		end
 
-        local mod = BT.InventoryModule
+		return
+	end
 
-        if mod and mod.mainFrame and mod.mainFrame:IsShown() then
-            mod:HideFrame()
-        end
-
-        return
-    end
-
-    if event == "SKILL_LINES_CHANGED" then
+	if event == "SKILL_LINES_CHANGED" then
 		if BT.CheckProfessions then
 			BT:CheckProfessions()
 		end
@@ -390,22 +388,70 @@ function module:UpdateLayout()
 						local slotName = "BagTagsSlotButton_" .. slotKey
 
 						-- TWORZENIE BEZPIECZNEGO PRZYCISKU (SecureActionButtonTemplate)
-						slotFrame =
-							CreateFrame("Button", slotName, section, "ItemButtonTemplate, SecureActionButtonTemplate")
+						slotFrame = CreateFrame("Button", slotName, section, "ItemButtonTemplate, SecureActionButtonTemplate")
 
+						-- Rejestrujemy kliknięcia; zachowaj PPM jako secure "item" (umożliwia użycie)
 						slotFrame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-						slotFrame:RegisterForDrag("LeftButton")
+						slotFrame:SetAttribute("type2", "item")
 
-						slotFrame:SetAttribute("type1", nil)
-						slotFrame:SetAttribute("type2", nil)
+						-- OnMouseUp: obsługa LPM (pickup), umieszczania z kursora i modified-click
+						slotFrame:SetScript("OnMouseUp", function(self, button)
+							-- upewnij się, że bag/slot są znane (ustawiane później przy aktualizacji)
+							local bID = self.bagID or self.bag
+							local sID = self.slotID or self.slot
+							if not bID or not sID then
+								return
+							end
 
+							-- link z tego slotu (może być nil)
+							local link = BT and BT.SafeGetContainerItemLink and BT:SafeGetContainerItemLink(bID, sID)
+
+							-- modified-click (Shift/Ctrl/Alt) -> standardowe zachowanie
+							if IsShiftKeyDown() or IsControlKeyDown() or IsAltKeyDown() then
+								if link then HandleModifiedItemClick(link) end
+								return
+							end
+
+							-- co jest aktualnie na kursore (nil gdy pusty)
+							local cursorType = select(1, GetCursorInfo())
+
+							-- sprawdzamy, czy na kursore jest item (unikamy innych typów kursora)
+							if cursorType == "item" then
+								-- jest item na kursore: włóż go do tego slotu (swap/put)
+								if C_Container and C_Container.PickupContainerItem then
+									C_Container.PickupContainerItem(bID, sID)
+								else
+									PickupContainerItem(bID, sID)
+								end
+								return
+							end
+
+							-- kursor pusty: LPM pobiera item na kursor; PPM pozostawiamy secure "item"
+							if button == "LeftButton" then
+								if C_Container and C_Container.PickupContainerItem then
+									C_Container.PickupContainerItem(bID, sID)
+								else
+									PickupContainerItem(bID, sID)
+								end
+								return
+							end
+
+							-- RightButton + pusty kursor -> nic tu, secure type2="item" wykona użycie
+						end)
+
+						-- Drag oraz tooltipy
 						slotFrame:SetScript("OnDragStart", function(self)
-							PickupContainerItem(self.bagID, self.slotID)
+							if self.bagID and self.slotID then
+								if C_Container and C_Container.PickupContainerItem then
+									C_Container.PickupContainerItem(self.bagID, self.slotID)
+								else
+									PickupContainerItem(self.bagID, self.slotID)
+								end
+							end
 						end)
 
 						slotFrame:SetScript("OnEnter", function(self)
-							local link = BT:SafeGetContainerItemLink(self.bagID, self.slotID)
-
+							local link = BT and BT.SafeGetContainerItemLink and BT:SafeGetContainerItemLink(self.bagID, self.slotID)
 							if link then
 								GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 								GameTooltip:SetHyperlink(link)
@@ -416,37 +462,6 @@ function module:UpdateLayout()
 						slotFrame:SetScript("OnLeave", function()
 							GameTooltip:Hide()
 						end)
-
-slotFrame:SetScript("PreClick", function(self, button)
-
-    local link = BT:SafeGetContainerItemLink(self.bagID, self.slotID)
-
-    if not link then
-        return
-    end
-
-    if IsShiftKeyDown() or IsControlKeyDown() or IsAltKeyDown() then
-        HandleModifiedItemClick(link)
-        return
-    end
-
-    -- Tylko LPM obsługujemy ręcznie
-    if button == "LeftButton" then
-
-        self:SetAttribute("type1", nil)
-
-        if C_Container and C_Container.PickupContainerItem then
-            C_Container.PickupContainerItem(self.bagID, self.slotID)
-        else
-            PickupContainerItem(self.bagID, self.slotID)
-        end
-
-    else
-        -- PPM pozostawiamy SecureActionButton
-        self:SetAttribute("type2", "item")
-    end
-
-end)
 
 						poolButtons[slotKey] = slotFrame
 					end
