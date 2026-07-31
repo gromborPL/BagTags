@@ -60,7 +60,13 @@ function BT:RefreshTags()
 	end
 end
 
+-- Replace BT.InventoryModule:RefreshAllOverlays
 function BT.InventoryModule:RefreshAllOverlays()
+	-- Zbuduj mapę aktualnych ilości itemów (slot-count) raz na początku odświeżania
+	if BT and BT.BuildCurrentItemCounts then
+		BT:BuildCurrentItemCounts()
+	end
+
 	for frameIndex = 1, (NUM_CONTAINER_FRAMES or 13) do
 		local frame = _G["ContainerFrame" .. frameIndex]
 
@@ -383,10 +389,12 @@ configFrame:SetScript("OnEvent", function(self, event, arg1)
 	self:UnregisterEvent("ADDON_LOADED")
 end)
 
--- Build current counts map: itemID -> total stack count across bags (0..4)
+-- Replace / Implement: BT:BuildCurrentItemCounts (slot-count) + last-seen timestamps
 function BT:BuildCurrentItemCounts()
 	BT._currentCounts = BT._currentCounts or {}
+	BT._lastSeen = BT._lastSeen or {}
 	table.wipe(BT._currentCounts)
+	local now = GetTime()
 
 	for bag = 0, 4 do
 		local numSlots = self:GetContainerNumSlots(bag) or 0
@@ -395,10 +403,10 @@ function BT:BuildCurrentItemCounts()
 			if link then
 				local itemID = tonumber(string.match(link, "item:(%d+)"))
 				if itemID then
-					local _, count = self:SafeGetContainerItemInfo(bag, slot)
-					-- jeśli API nie zwraca count, przyjmij 1
-					count = (count and count > 0) and count or 1
-					BT._currentCounts[itemID] = (BT._currentCounts[itemID] or 0) + count
+					-- slot-count: każdy zajęty slot liczy jako 1
+					BT._currentCounts[itemID] = (BT._currentCounts[itemID] or 0) + 1
+					-- zapisz kiedy ostatnio widziano ten itemID
+					BT._lastSeen[itemID] = now
 				end
 			end
 		end
@@ -495,9 +503,11 @@ function BT:GetSlotKey(bag, slot)
 	return string.format("%d_%d_%s", bag, slot, itemID or "0")
 end
 
--- Snapshot known items by itemID (baseline używany do oznaczania nowych)
+-- Replace / Implement: BT:SnapshotCurrentItems (slot-count baseline)
 function BT:SnapshotCurrentItems()
+	BT.knownItems = BT.knownItems or {}
 	table.wipe(BT.knownItems)
+
 	for bag = 0, 4 do
 		local numSlots = self:GetContainerNumSlots(bag) or 0
 		for slot = 1, numSlots do
@@ -505,9 +515,8 @@ function BT:SnapshotCurrentItems()
 			if link then
 				local itemID = tonumber(string.match(link, "item:(%d+)"))
 				if itemID then
-					local _, count = self:SafeGetContainerItemInfo(bag, slot)
-					count = (count and count > 0) and count or 1
-					BT.knownItems[itemID] = (BT.knownItems[itemID] or 0) + count
+					-- slot-count snapshot: liczymy ile slotów zawiera dany itemID
+					BT.knownItems[itemID] = (BT.knownItems[itemID] or 0) + 1
 				end
 			end
 		end
@@ -616,130 +625,130 @@ local function SetOverlayStyle(overlay, borderColor, labelColor, letter)
 end
 
 function BT:UpdateSlotOverlay(slotFrame, bagID, slotID)
-    if not slotFrame then
-        return
-    end
+	if not slotFrame then
+		return
+	end
 
-    if slotFrame.BagTagsOverlay then
-        slotFrame.BagTagsOverlay:Hide()
-    end
+	if slotFrame.BagTagsOverlay then
+		slotFrame.BagTagsOverlay:Hide()
+	end
 
-    local texture = select(1, BT:GetContainerItemInfo(bagID, slotID))
+	local texture = select(1, BT:GetContainerItemInfo(bagID, slotID))
 
-    if not texture then
-        return
-    end
+	if not texture then
+		return
+	end
 
-    local link = BT:SafeGetContainerItemLink(bagID, slotID)
+	local link = BT:SafeGetContainerItemLink(bagID, slotID)
 
-    if not link or not BagTagsConfig then
-        return
-    end
+	if not link or not BagTagsConfig then
+		return
+	end
 
-    local itemName = GetItemInfo(link)
+	local itemName = GetItemInfo(link)
 
-    local itemName, _, quality, _, _, itemType, _, _, _, _, itemVendorPrice = GetItemInfo(link)
-    quality = quality or 0
+	local itemName, _, quality, _, _, itemType, _, _, _, _, itemVendorPrice = GetItemInfo(link)
+	quality = quality or 0
 
-    -- Soulbound ma priorytet
-    if BT:IsItemSoulbound(bagID, slotID) and BagTagsConfig.showSoulbound then
-        local overlay = GetOrCreateOverlay(slotFrame)
-        SetOverlayStyle(overlay, { r = 0.53, g = 0.12, b = 0.77, a = 1 }, { r = 0.90, g = 0.60, b = 1.0, a = 1 }, "S")
-        return
-    end
+	-- Soulbound ma priorytet
+	if BT:IsItemSoulbound(bagID, slotID) and BagTagsConfig.showSoulbound then
+		local overlay = GetOrCreateOverlay(slotFrame)
+		SetOverlayStyle(overlay, { r = 0.53, g = 0.12, b = 0.77, a = 1 }, { r = 0.90, g = 0.60, b = 1.0, a = 1 }, "S")
+		return
+	end
 
-    -- Upewnij się, że mamy mapę bieżących ilości (zwykle zrobiona raz w RefreshAllOverlays)
-    if not BT._currentCounts then
-        BT:BuildCurrentItemCounts()
-    end
+	-- Upewnij się, że mamy mapę bieżących ilości (zwykle zrobiona raz w RefreshAllOverlays)
+	if not BT._currentCounts then
+		BT:BuildCurrentItemCounts()
+	end
 
-    -- Sprawdź czy to NOWY item (porównanie total count według itemID)
-    local itemID = tonumber(string.match(link, "item:(%d+)"))
-    if itemID then
-        local current = (BT._currentCounts and BT._currentCounts[itemID]) or 0
-        local known = BT.knownItems[itemID] or 0
-        if current > known then
-            local overlay = GetOrCreateOverlay(slotFrame)
-            -- kolor: pomarańczowy/żółty dla "N"
-            SetOverlayStyle(overlay, { r = 1.0, g = 0.5, b = 0.0, a = 1 }, { r = 1.0, g = 0.95, b = 0.6, a = 1 }, "N")
-            return
-        end
-    end
+	-- Sprawdź czy to NOWY item (porównanie total count według itemID)
+	local itemID = tonumber(string.match(link, "item:(%d+)"))
+	if itemID then
+		local current = (BT._currentCounts and BT._currentCounts[itemID]) or 0
+		local known = BT.knownItems[itemID] or 0
+		if current > known then
+			local overlay = GetOrCreateOverlay(slotFrame)
+			-- kolor: pomarańczowy/żółty dla "N"
+			SetOverlayStyle(overlay, { r = 1.0, g = 0.5, b = 0.0, a = 1 }, { r = 1.0, g = 0.95, b = 0.6, a = 1 }, "N")
+			return
+		end
+	end
 
-    local ahPrice = 0
-    local deValue = 0
+	local ahPrice = 0
+	local deValue = 0
 
-    if itemName then
-        if Atr_GetAuctionPrice then
-            local ok, value = pcall(Atr_GetAuctionPrice, itemName)
-            if ok then
-                ahPrice = value or 0
-            end
-        end
+	if itemName then
+		if Atr_GetAuctionPrice then
+			local ok, value = pcall(Atr_GetAuctionPrice, itemName)
+			if ok then
+				ahPrice = value or 0
+			end
+		end
 
-        if Atr_GetDisenchantValue then
-            local ok, value = pcall(Atr_GetDisenchantValue, itemName)
-            if ok then
-                deValue = value or 0
-            end
-        end
-    end
+		if Atr_GetDisenchantValue then
+			local ok, value = pcall(Atr_GetDisenchantValue, itemName)
+			if ok then
+				deValue = value or 0
+			end
+		end
+	end
 
-    local vendorPrice = itemVendorPrice or 0
+	local vendorPrice = itemVendorPrice or 0
 
-    local netAhPrice = ahPrice - (ahPrice * 0.05)
-    local currentTag = "NONE"
-    local maxEffectiveValue = vendorPrice
+	local netAhPrice = ahPrice - (ahPrice * 0.05)
+	local currentTag = "NONE"
+	local maxEffectiveValue = vendorPrice
 
-    -- Auction House
-    if BagTagsConfig.showAuction and ahPrice > 0 and netAhPrice > vendorPrice then
-        maxEffectiveValue = netAhPrice
-        currentTag = "A"
-    end
+	-- Auction House
+	if BagTagsConfig.showAuction and ahPrice > 0 and netAhPrice > vendorPrice then
+		maxEffectiveValue = netAhPrice
+		currentTag = "A"
+	end
 
-    -- Disenchant
-    if
-        BagTagsConfig.showDisenchant
-        and BT.hasEnchanting
-        and (quality == 2 or quality == 3)
-        and (itemType == "Armor" or itemType == "Weapon")
-    then
-        if deValue > maxEffectiveValue and deValue > vendorPrice then
-            maxEffectiveValue = deValue
-            currentTag = "D"
-        end
-    end
+	-- Disenchant
+	if
+		BagTagsConfig.showDisenchant
+		and BT.hasEnchanting
+		and (quality == 2 or quality == 3)
+		and (itemType == "Armor" or itemType == "Weapon")
+	then
+		if deValue > maxEffectiveValue and deValue > vendorPrice then
+			maxEffectiveValue = deValue
+			currentTag = "D"
+		end
+	end
 
-    -- Vendor
-    if currentTag == "NONE" and vendorPrice > 0 then
-        currentTag = "V"
-    end
+	-- Vendor
+	if currentTag == "NONE" and vendorPrice > 0 then
+		currentTag = "V"
+	end
 
-    if currentTag == "A" and BagTagsConfig.showAuction then
-        local overlay = GetOrCreateOverlay(slotFrame)
+	if currentTag == "A" and BagTagsConfig.showAuction then
+		local overlay = GetOrCreateOverlay(slotFrame)
 
-        SetOverlayStyle(overlay, { r = 0.1, g = 1, b = 0.1, a = 1 }, { r = 0.4, g = 1, b = 0.4, a = 1 }, "A")
+		SetOverlayStyle(overlay, { r = 0.1, g = 1, b = 0.1, a = 1 }, { r = 0.4, g = 1, b = 0.4, a = 1 }, "A")
 
-        return
-    elseif currentTag == "D" and BagTagsConfig.showDisenchant then
-        local overlay = GetOrCreateOverlay(slotFrame)
+		return
+	elseif currentTag == "D" and BagTagsConfig.showDisenchant then
+		local overlay = GetOrCreateOverlay(slotFrame)
 
-        SetOverlayStyle(overlay, { r = 0.8, g = 0.3, b = 0.8, a = 1 }, { r = 1.0, g = 0.5, b = 1.0, a = 1 }, "D")
+		SetOverlayStyle(overlay, { r = 0.8, g = 0.3, b = 0.8, a = 1 }, { r = 1.0, g = 0.5, b = 1.0, a = 1 }, "D")
 
-        return
-    elseif currentTag == "V" and BagTagsConfig.showVendor then
-        local overlay = GetOrCreateOverlay(slotFrame)
+		return
+	elseif currentTag == "V" and BagTagsConfig.showVendor then
+		local overlay = GetOrCreateOverlay(slotFrame)
 
-        SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
+		SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
 
-        return
-    end
+		return
+	end
 
-    if quality == 0 and BagTagsConfig.showVendor then
-        local overlay = GetOrCreateOverlay(slotFrame)
-        SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
-        return
-    end
+	if quality == 0 and BagTagsConfig.showVendor then
+		local overlay = GetOrCreateOverlay(slotFrame)
+		SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
+		return
+	end
 end
 
 function BT:FormatMoney(amount)
@@ -763,14 +772,28 @@ function BT:FormatMoney(amount)
 end
 
 local overlayEvents = CreateFrame("Frame")
-
 overlayEvents:RegisterEvent("BAG_UPDATE")
 overlayEvents:RegisterEvent("BAG_UPDATE_DELAYED")
 
-overlayEvents:SetScript("OnEvent", function()
-	if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then
-		BT.InventoryModule:RefreshAllOverlays()
+local pendingRefresh = false
+local THROTTLE_SECONDS = 0.15
+
+local function ScheduleRefresh()
+	if pendingRefresh then
+		return
 	end
+	pendingRefresh = true
+	C_Timer.After(THROTTLE_SECONDS, function()
+		pendingRefresh = false
+		if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then
+			BT.InventoryModule:RefreshAllOverlays()
+		end
+	end)
+end
+
+overlayEvents:SetScript("OnEvent", function(self, event, ...)
+	-- Throttleujemy pełne odświeżenie, aby uniknąć wielokrotnych skanów podczas szybkich zdarzeń
+	ScheduleRefresh()
 end)
 
 if type(OpenBackpack) == "function" then
@@ -795,52 +818,61 @@ end
 
 local autoSnapshotFrame = CreateFrame("Frame")
 autoSnapshotFrame:RegisterEvent("LOOT_CLOSED")
+autoSnapshotFrame:RegisterEvent("MAIL_SHOW")
 autoSnapshotFrame:RegisterEvent("MERCHANT_CLOSED")
-autoSnapshotFrame:SetScript("OnEvent", function(self, event)
-    if BT and BT.SnapshotCurrentItems then
-        BT:SnapshotCurrentItems()
-        if BT.BuildCurrentItemCounts then BT:BuildCurrentItemCounts() end
-        if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then BT.InventoryModule:RefreshAllOverlays() end
-        -- bez printów: usuń poniższy print jeśli nie chcesz komunikatów
-        print("BagTags: snapshot wykonany po zdarzeniu:", event)
-    end
+
+autoSnapshotFrame:SetScript("OnEvent", function(self, event, ...)
+	if BT and BT.SnapshotCurrentItems then
+		-- ustaw baseline i odśwież counts + nakładki
+		BT:SnapshotCurrentItems()
+		if BT.BuildCurrentItemCounts then
+			BT:BuildCurrentItemCounts()
+		end
+		if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then
+			BT.InventoryModule:RefreshAllOverlays()
+		end
+	end
 end)
 
 -- prosty CLI do testów i ręcznego ustawiania snapshotu
 SLASH_BAGTAGS1 = "/bagtags"
 SlashCmdList["BAGTAGS"] = function(msg)
-    local cmd, arg = msg:match("^(%S*)%s*(.-)$")
-    if cmd == "snapshot" or cmd == "markread" then
-        if BT and BT.SnapshotCurrentItems then
-            BT:SnapshotCurrentItems()
-            print("BagTags: snapshot wykonany (wszystkie przedmioty oznaczone jako znane).")
-            if BT.BuildCurrentItemCounts then BT:BuildCurrentItemCounts() end
-            if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then BT.InventoryModule:RefreshAllOverlays() end
-        else
-            print("BagTags: funkcja SnapshotCurrentItems nieznaleziona.")
-        end
-        return
-    end
+	local cmd, arg = msg:match("^(%S*)%s*(.-)$")
+	if cmd == "snapshot" or cmd == "markread" then
+		if BT and BT.SnapshotCurrentItems then
+			BT:SnapshotCurrentItems()
+			print("BagTags: snapshot wykonany (wszystkie przedmioty oznaczone jako znane).")
+			if BT.BuildCurrentItemCounts then
+				BT:BuildCurrentItemCounts()
+			end
+			if BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then
+				BT.InventoryModule:RefreshAllOverlays()
+			end
+		else
+			print("BagTags: funkcja SnapshotCurrentItems nieznaleziona.")
+		end
+		return
+	end
 
-    if cmd == "refresh" then
-        if BT and BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then
-            BT.InventoryModule:RefreshAllOverlays()
-            print("BagTags: odświeżono nakładki.")
-        else
-            print("BagTags: RefreshAllOverlays niedostępne.")
-        end
-        return
-    end
+	if cmd == "refresh" then
+		if BT and BT.InventoryModule and BT.InventoryModule.RefreshAllOverlays then
+			BT.InventoryModule:RefreshAllOverlays()
+			print("BagTags: odświeżono nakładki.")
+		else
+			print("BagTags: RefreshAllOverlays niedostępne.")
+		end
+		return
+	end
 
-    if cmd == "show" and tonumber(arg) then
-        local id = tonumber(arg)
-        local cur = (BT._currentCounts and BT._currentCounts[id]) or 0
-        local known = (BT.knownItems and BT.knownItems[id]) or 0
-        print(("BagTags: itemID=%d current=%d known=%d"):format(id, cur, known))
-        return
-    end
+	if cmd == "show" and tonumber(arg) then
+		local id = tonumber(arg)
+		local cur = (BT._currentCounts and BT._currentCounts[id]) or 0
+		local known = (BT.knownItems and BT.knownItems[id]) or 0
+		print(("BagTags: itemID=%d current=%d known=%d"):format(id, cur, known))
+		return
+	end
 
-    print("/bagtags snapshot|markread  — oznacz aktualne jako znane")
-    print("/bagtags refresh              — wymuś odświeżenie nakładek")
-    print("/bagtags show <itemID>        — pokaż current/known dla itemID")
+	print("/bagtags snapshot|markread  — oznacz aktualne jako znane")
+	print("/bagtags refresh              — wymuś odświeżenie nakładek")
+	print("/bagtags show <itemID>        — pokaż current/known dla itemID")
 end
