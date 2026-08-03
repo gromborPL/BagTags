@@ -61,6 +61,125 @@ function module:InitializeFrame()
 	money:SetPoint("RIGHT", close, "LEFT", -5, -1)
 	self.moneyDisplay = money
 
+	local vendorBar = CreateFrame("Button", nil, frame)
+
+	vendorBar:SetHeight(18)
+	vendorBar:SetWidth(120)
+
+	vendorBar:SetPoint("RIGHT", money, "LEFT", -15, 0)
+
+	local vendorText = vendorBar:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+	vendorText:SetAllPoints()
+	vendorText:SetJustifyH("RIGHT")
+	vendorText:SetText("")
+
+	vendorBar.text = vendorText
+
+	vendorBar:SetScript("OnClick", function()
+		if MerchantFrame and MerchantFrame:IsShown() then
+			BT:SellVendorItems()
+		end
+	end)
+
+	vendorBar:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+
+		GameTooltip:AddLine("Vendor Items", 1, 0.82, 0)
+
+		GameTooltip:AddLine(" ")
+
+		GameTooltip:AddLine("Sell all items tagged with V", 1, 1, 1)
+
+		local total = BT:ComputeVendorTotal()
+
+		GameTooltip:AddLine(BT:FormatMoney(total), 1, 0.82, 0)
+
+		GameTooltip:Show()
+	end)
+
+	vendorBar:SetScript("OnLeave", GameTooltip_Hide)
+
+	vendorBar:Hide()
+
+	self.vendorBar = vendorBar
+
+	local vendorBar = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+
+	vendorBar:SetPoint("RIGHT", money, "LEFT", -20, 0)
+	vendorBar:SetText("")
+	vendorBar:SetTextColor(1, 0.82, 0)
+
+	self.vendorDisplay = vendorBar
+
+	local vendorButton = CreateFrame("Button", nil, frame)
+
+	vendorButton:SetPoint("TOPLEFT", vendorBar, "TOPLEFT", -4, 4)
+	vendorButton:SetPoint("BOTTOMRIGHT", vendorBar, "BOTTOMRIGHT", 4, -4)
+
+	vendorButton:RegisterForClicks("LeftButtonUp")
+
+	vendorButton:SetScript("OnClick", function()
+		if MerchantFrame and MerchantFrame:IsShown() then
+			BT:SellVendorItems()
+		end
+	end)
+
+	vendorButton:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+
+		local total = BT:ComputeVendorTotal()
+
+		GameTooltip:AddLine("Vendor Items")
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine("Click to sell all Vendor-tagged items")
+		GameTooltip:AddLine("Total value: " .. BT:FormatMoney(total), 1, 0.82, 0)
+
+		GameTooltip:Show()
+	end)
+
+	vendorButton:SetScript("OnLeave", GameTooltip_Hide)
+
+	vendorButton:Hide()
+
+	self.vendorButton = vendorButton
+
+	vendorBar:SetPoint("RIGHT", money, "LEFT", -15, 0)
+	vendorBar:SetText("")
+	vendorBar:SetJustifyH("RIGHT")
+
+	self.vendorDisplay = vendorBar
+
+	local vendorButton = CreateFrame("Button", nil, frame)
+
+	vendorButton:SetPoint("TOPLEFT", vendorBar, "TOPLEFT", -4, 4)
+	vendorButton:SetPoint("BOTTOMRIGHT", vendorBar, "BOTTOMRIGHT", 4, -4)
+
+	vendorButton:RegisterForClicks("LeftButtonUp")
+
+	self.vendorButton = vendorButton
+
+	vendorButton:SetScript("OnClick", function()
+		if MerchantFrame and MerchantFrame:IsShown() then
+			BT:SellVendorItems()
+		end
+	end)
+
+	vendorButton:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+
+		local total = BT:ComputeVendorTotal()
+
+		GameTooltip:AddLine("Vendor Items")
+		GameTooltip:AddLine(" ")
+		GameTooltip:AddLine("Click to sell all vendor-tagged items", 1, 1, 1)
+
+		GameTooltip:AddLine("Value: " .. BT:FormatMoney(total), 1, 0.82, 0)
+
+		GameTooltip:Show()
+	end)
+
+	vendorButton:SetScript("OnLeave", GameTooltip_Hide)
+
 	local scrollFrame = CreateFrame("ScrollFrame", "BagTagsInventoryScrollFrame", frame, "UIPanelScrollFrameTemplate")
 	scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 10, -40)
 	scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -30, 10)
@@ -388,7 +507,8 @@ function module:UpdateLayout()
 						local slotName = "BagTagsSlotButton_" .. slotKey
 
 						-- TWORZENIE BEZPIECZNEGO PRZYCISKU (SecureActionButtonTemplate)
-						slotFrame = CreateFrame("Button", slotName, section, "ItemButtonTemplate, SecureActionButtonTemplate")
+						slotFrame =
+							CreateFrame("Button", slotName, section, "ItemButtonTemplate, SecureActionButtonTemplate")
 
 						-- Rejestrujemy kliknięcia; zachowaj PPM jako secure "item" (umożliwia użycie)
 						slotFrame:RegisterForClicks("LeftButtonUp", "RightButtonUp")
@@ -405,34 +525,28 @@ function module:UpdateLayout()
 
 							local link = BT and BT.SafeGetContainerItemLink and BT:SafeGetContainerItemLink(bID, sID)
 
-							-- ShiftLeftButton  MerchantFrame visible -> sell item immediately
-							if IsShiftKeyDown() and button == "LeftButton" and (MerchantFrame and MerchantFrame:IsShown()) then
-								if not link then return end
-
-								-- pick up item to cursor
-								if C_Container and C_Container.PickupContainerItem then
-									C_Container.PickupContainerItem(bID, sID)
-								else
-									PickupContainerItem(bID, sID)
+							-- SPECIAL CASE: Shift+LeftClick at merchant should quick-sell the item
+							if button == "LeftButton" and IsShiftKeyDown() then
+								local merchantOpen = (MerchantFrame and MerchantFrame:IsShown())
+								if merchantOpen then
+									if C_Container and C_Container.UseContainerItem then
+										C_Container.UseContainerItem(bID, sID)
+									else
+										UseContainerItem(bID, sID)
+									end
+									return
 								end
-
-								-- sell it to vendor
-								if SellCursorItem then
-									SellCursorItem()
-								else
-									-- fallback: clear cursor if SellCursorItem unavailable
-									ClearCursor()
-								end
-								return
 							end
 
-							-- Other modified-clicks -> standard modified handler
+							-- modified-clicks (linking, dressing room, etc.)
 							if IsShiftKeyDown() or IsControlKeyDown() or IsAltKeyDown() then
-								if link then HandleModifiedItemClick(link) end
+								if link then
+									HandleModifiedItemClick(link)
+								end
 								return
 							end
 
-							-- If there's an item on cursor, put it into this slot (swap/put)
+							-- If there's something on cursor, put it into this slot
 							local cursorType = select(1, GetCursorInfo())
 							if cursorType == "item" then
 								if C_Container and C_Container.PickupContainerItem then
@@ -443,7 +557,7 @@ function module:UpdateLayout()
 								return
 							end
 
-							-- Cursor empty: LeftButton picks up the item
+							-- Normal left-click pickup
 							if button == "LeftButton" then
 								if C_Container and C_Container.PickupContainerItem then
 									C_Container.PickupContainerItem(bID, sID)
@@ -452,7 +566,8 @@ function module:UpdateLayout()
 								end
 								return
 							end
-							-- RightButton  empty cursor: do nothing here (secure type2="item" will handle use)
+
+							-- RightButton: secure type2="item" will handle use / context menu
 						end)
 
 						-- Drag oraz tooltipy
@@ -467,7 +582,9 @@ function module:UpdateLayout()
 						end)
 
 						slotFrame:SetScript("OnEnter", function(self)
-							local link = BT and BT.SafeGetContainerItemLink and BT:SafeGetContainerItemLink(self.bagID, self.slotID)
+							local link = BT
+								and BT.SafeGetContainerItemLink
+								and BT:SafeGetContainerItemLink(self.bagID, self.slotID)
 							if link then
 								GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 								GameTooltip:SetHyperlink(link)
@@ -479,7 +596,7 @@ function module:UpdateLayout()
 							GameTooltip:Hide()
 						end)
 
- 						poolButtons[slotKey] = slotFrame
+						poolButtons[slotKey] = slotFrame
 					end
 
 					slotFrame:SetParent(section)
@@ -579,6 +696,9 @@ function module:ShowFrame()
 	self:RestoreLayoutPositions()
 	self.mainFrame:Show()
 	UpdateTitleText()
+	if BT.UpdateSellButton then
+		BT:UpdateSellButton()
+	end
 	self:UpdateLayout()
 end
 
