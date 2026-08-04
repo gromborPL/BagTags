@@ -439,25 +439,28 @@ end
 function BT:GetContainerItemLink(bag, slot)
 	if C_Container and C_Container.GetContainerItemLink then
 		return C_Container.GetContainerItemLink(bag, slot)
+	elseif GetContainerItemLink then
+		return GetContainerItemLink(bag, slot)
 	end
-
-	return GetContainerItemLink(bag, slot)
+	return nil
 end
 
 function BT:GetContainerNumSlots(bag)
 	if C_Container and C_Container.GetContainerNumSlots then
 		return C_Container.GetContainerNumSlots(bag)
+	elseif GetContainerNumSlots then
+		return GetContainerNumSlots(bag) or 0
 	end
-
-	return GetContainerNumSlots(bag) or 0
+	return 0
 end
 
 function BT:GetContainerNumFreeSlots(bag)
 	if C_Container and C_Container.GetContainerNumFreeSlots then
 		return C_Container.GetContainerNumFreeSlots(bag)
+	elseif GetContainerNumFreeSlots then
+		return GetContainerNumFreeSlots(bag)
 	end
-
-	return GetContainerNumFreeSlots(bag)
+	return 0, 0
 end
 
 function BT:CheckProfessions()
@@ -1218,31 +1221,27 @@ function BT:SellVendorItems()
 		end
 	end
 
-	DEFAULT_CHAT_FRAME:AddMessage(
-    string.format(
-        "|cff00ffcc[BagTags]|r Sold %d vendor items for %s",
-        sold,
-        self:FormatMoney(earned)
-    )
-)
+DEFAULT_CHAT_FRAME:AddMessage(
+		string.format(
+			"|cff00ffcc[BagTags]|r Sold %d vendor items for %s",
+			sold,
+			self:FormatMoney(earned)
+		)
+	)
 
-C_Timer.After(0.25, function()
+	C_Timer.After(0.25, function()
+		if BT.BuildCurrentItemCounts then
+			BT:BuildCurrentItemCounts()
+		end
 
-    if BT.BuildCurrentItemCounts then
-        BT:BuildCurrentItemCounts()
-    end
+		if BT.UpdateSellButton then
+			BT:UpdateSellButton()
+		end
 
-    if BT.UpdateSellButton then
-        BT:UpdateSellButton()
-    end
-
-    if BT.InventoryModule and BT.InventoryModule.UpdateLayout then
-        BT.InventoryModule:UpdateLayout()
-    end
-
-end)
-
-return sold, earned
+		if BT.InventoryModule and BT.InventoryModule.UpdateLayout then
+			BT.InventoryModule:UpdateLayout()
+		end
+	end)
 
 	return sold, earned
 end
