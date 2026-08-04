@@ -2,7 +2,7 @@
 ## Title: BagTags
 ## Notes: Automatic grouping, sorting and item tagging
 ## Author: grombor
-## Version: 1.0.1
+## Version: 1.1.0
 ## SavedVariables: BagTagsConfig, BagTagsCategoryState
 
 BagTags.lua
