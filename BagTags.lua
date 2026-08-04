@@ -87,6 +87,13 @@ function BT.InventoryModule:RefreshAllOverlays()
 			end
 		end
 	end
+
+	-- Po odświeżeniu nakładek, odśwież przycisk Sell Vendor (jeśli dostępny)
+	if BT and type(BT.UpdateSellButton) == "function" then
+		C_Timer.After(0.03, function()
+			BT:UpdateSellButton()
+		end)
+	end
 end
 
 function BT:SetupOptions()
@@ -432,25 +439,28 @@ end
 function BT:GetContainerItemLink(bag, slot)
 	if C_Container and C_Container.GetContainerItemLink then
 		return C_Container.GetContainerItemLink(bag, slot)
+	elseif GetContainerItemLink then
+		return GetContainerItemLink(bag, slot)
 	end
-
-	return GetContainerItemLink(bag, slot)
+	return nil
 end
 
 function BT:GetContainerNumSlots(bag)
 	if C_Container and C_Container.GetContainerNumSlots then
 		return C_Container.GetContainerNumSlots(bag)
+	elseif GetContainerNumSlots then
+		return GetContainerNumSlots(bag) or 0
 	end
-
-	return GetContainerNumSlots(bag) or 0
+	return 0
 end
 
 function BT:GetContainerNumFreeSlots(bag)
 	if C_Container and C_Container.GetContainerNumFreeSlots then
 		return C_Container.GetContainerNumFreeSlots(bag)
+	elseif GetContainerNumFreeSlots then
+		return GetContainerNumFreeSlots(bag)
 	end
-
-	return GetContainerNumFreeSlots(bag)
+	return 0, 0
 end
 
 function BT:CheckProfessions()
@@ -540,7 +550,14 @@ function BT:GetItemTag(bag, slot)
 	end
 
 	-- dalej klasyfikacja według itemClass (bez zmian)
-	local _, _, _, _, _, itemClass = GetItemInfo(link)
+	local item = BT:GetItemData(link)
+
+	local itemClass = item.itemType
+
+	local quality = item.quality
+	local itemType = item.itemType
+	local vendorPrice = item.vendorPrice
+
 	if itemClass == "Consumable" or itemClass == "Materiały eksploatacyjne" then
 		return "Consumables"
 	end
@@ -558,70 +575,59 @@ local scanner = CreateFrame("GameTooltip", "BagTagsScanner", nil, "GameTooltipTe
 scanner:SetOwner(WorldFrame, "ANCHOR_NONE")
 
 function BT:IsItemSoulbound(bag, slot)
-    -- Preferencyjny check przez C_Container.GetContainerItemInfo (jeśli dostępne)
-    if C_Container and C_Container.GetContainerItemInfo then
-        local info = C_Container.GetContainerItemInfo(bag, slot)
+	-- Preferencyjny check przez C_Container.GetContainerItemInfo (jeśli dostępne)
+	if C_Container and C_Container.GetContainerItemInfo then
+		local info = C_Container.GetContainerItemInfo(bag, slot)
 
-        if info then
-            -- Różne wersje API mogą wystawiać pola z bind info
-            if info.itemIsBound == true or info.isBound == true then
-                return true
-            end
+		if info then
+			-- Różne wersje API mogą wystawiać pola z bind info
+			if info.itemIsBound == true or info.isBound == true then
+				return true
+			end
 
-            if info.itemBindType and (
-                info.itemBindType == "BIND_ON_PICKUP" or
-                info.itemBindType == "BOP"
-            ) then
-                return true
-            end
+			if info.itemBindType and (info.itemBindType == "BIND_ON_PICKUP" or info.itemBindType == "BOP") then
+				return true
+			end
 
-            -- Czasem jest pole bindType lub podobne
-            if info.bindType and (
-                info.bindType == "BIND_ON_PICKUP" or
-                info.bindType == "BOP"
-            ) then
-                return true
-            end
-        end
-    end
+			-- Czasem jest pole bindType lub podobne
+			if info.bindType and (info.bindType == "BIND_ON_PICKUP" or info.bindType == "BOP") then
+				return true
+			end
+		end
+	end
 
-    -- Fallback: skanowanie tooltipu (działa niezależnie od lokalizacji)
-    scanner:ClearLines()
-    scanner:SetBagItem(bag, slot)
+	-- Fallback: skanowanie tooltipu (działa niezależnie od lokalizacji)
+	scanner:ClearLines()
+	scanner:SetBagItem(bag, slot)
 
-    for i = 1, scanner:NumLines() do
-        local line = _G["BagTagsScannerTextLeft" .. i]
-        local text = line and line:GetText()
+	for i = 1, scanner:NumLines() do
+		local line = _G["BagTagsScannerTextLeft" .. i]
+		local text = line and line:GetText()
 
-        if text then
-            -- Najpewniejsze: porównanie z lokalizowanymi stałymi
-            if (type(ITEM_SOULBOUND) == "string" and text == ITEM_SOULBOUND)
-                or (type(ITEM_BIND_ON_PICKUP) == "string" and text == ITEM_BIND_ON_PICKUP)
-            then
-                return true
-            end
+		if text then
+			-- Najpewniejsze: porównanie z lokalizowanymi stałymi
+			if
+				(type(ITEM_SOULBOUND) == "string" and text == ITEM_SOULBOUND)
+				or (type(ITEM_BIND_ON_PICKUP) == "string" and text == ITEM_BIND_ON_PICKUP)
+			then
+				return true
+			end
 
-            -- Account Bound nie traktujemy jako przypisane do postaci
-            if type(ITEM_BIND_TO_ACCOUNT) == "string" and text == ITEM_BIND_TO_ACCOUNT then
-                return false
-            end
+			-- Account Bound nie traktujemy jako przypisane do postaci
+			if type(ITEM_BIND_TO_ACCOUNT) == "string" and text == ITEM_BIND_TO_ACCOUNT then
+				return false
+			end
 
-            -- Dodatkowe dopasowania dla różnych lokalizacji
-            if string.find(text, "Soulbound")
-                or string.find(text, "Przypisany")
-                or string.find(text, "Przypisane")
-            then
-                if not (
-                    type(ITEM_BIND_TO_ACCOUNT) == "string"
-                    and text == ITEM_BIND_TO_ACCOUNT
-                ) then
-                    return true
-                end
-            end
-        end
-    end
+			-- Dodatkowe dopasowania dla różnych lokalizacji
+			if string.find(text, "Soulbound") or string.find(text, "Przypisany") or string.find(text, "Przypisane") then
+				if not (type(ITEM_BIND_TO_ACCOUNT) == "string" and text == ITEM_BIND_TO_ACCOUNT) then
+					return true
+				end
+			end
+		end
+	end
 
-    return false
+	return false
 end
 
 -- ============================================================================
@@ -670,195 +676,62 @@ local function SetOverlayStyle(overlay, borderColor, labelColor, letter)
 end
 
 function BT:GetValueTag(bag, slot)
-    local link = self:SafeGetContainerItemLink(bag, slot)
-
-    if not link then
-        return nil
-    end
-
-    local itemName,
-        _,
-        quality,
-        _,
-        _,
-        itemType,
-        _,
-        _,
-        _,
-        _,
-        itemVendorPrice = GetItemInfo(link)
-
-    quality = quality or 0
-    local vendorPrice = itemVendorPrice or 0
-
-    if self:IsItemSoulbound(bag, slot) then
-        return "S"
-    end
-
-    local itemID = tonumber(string.match(link, "item:(%d+)"))
-
-    if itemID then
-        local current = (BT._currentCounts and BT._currentCounts[itemID]) or 0
-        local known = BT.knownItems[itemID] or 0
-
-        if current > known then
-            return "N"
-        end
-    end
-
-    local ahPrice = 0
-    local deValue = 0
-
-    if itemName then
-        if Atr_GetAuctionPrice then
-            local ok, value = pcall(Atr_GetAuctionPrice, itemName)
-
-            if ok then
-                ahPrice = value or 0
-            end
-        end
-
-        if Atr_GetDisenchantValue then
-            local ok, value = pcall(Atr_GetDisenchantValue, itemName)
-
-            if ok then
-                deValue = value or 0
-            end
-        end
-    end
-
-    local netAhPrice = ahPrice - (ahPrice * 0.05)
-
-    local bestValue = vendorPrice
-    local tag = "V"
-
-    if ahPrice > 0 and netAhPrice > vendorPrice then
-        bestValue = netAhPrice
-        tag = "A"
-    end
-
-    if BT.hasEnchanting
-        and (quality == 2 or quality == 3)
-        and (itemType == "Armor" or itemType == "Weapon")
-        and deValue > bestValue
-    then
-        tag = "D"
-    end
-
-    return tag
+	local tag = self:GetBestValueTag(bag, slot)
+	return tag
 end
 
 -- Zastąp istniejącą funkcję BT:UpdateSlotOverlay tą wersją (prosta, deterministyczna logika merchant)
 function BT:UpdateSlotOverlay(slotFrame, bagID, slotID)
-    if not slotFrame then
-        return
-    end
+	if not slotFrame then
+		return
+	end
 
-    if slotFrame.BagTagsOverlay then
-        slotFrame.BagTagsOverlay:Hide()
-    end
+	if slotFrame.BagTagsOverlay then
+		slotFrame.BagTagsOverlay:Hide()
+	end
 
-    local texture = select(1, BT:GetContainerItemInfo(bagID, slotID))
-    if not texture then
-        return
-    end
+	local texture = select(1, self:GetContainerItemInfo(bagID, slotID))
 
-    local link = BT:SafeGetContainerItemLink(bagID, slotID)
-    if not link or not BagTagsConfig then
-        return
-    end
+	if not texture then
+		return
+	end
 
-    local itemName, _, quality, _, _, itemType, _, _, _, _, itemVendorPrice = GetItemInfo(link)
-    quality = quality or 0
-    local vendorPrice = itemVendorPrice or 0
+	local tag = self:GetBestValueTag(bagID, slotID)
 
-    -- Soulbound ma najwyższy priorytet (bez zmian)
-    if BagTagsConfig.showSoulbound and BT:IsItemSoulbound(bagID, slotID) then
-        local overlay = GetOrCreateOverlay(slotFrame)
-        SetOverlayStyle(overlay, { r = 0.53, g = 0.12, b = 0.77, a = 1 }, { r = 0.90, g = 0.60, b = 1.0, a = 1 }, "S")
-        return
-    end
+	if not tag then
+		return
+	end
 
-    -- Ensure counts exist for "New Items"
-    if not BT._currentCounts then
-        BT:BuildCurrentItemCounts()
-    end
+	local overlay = GetOrCreateOverlay(slotFrame)
 
-    -- New Items (bez zmian)
-    local itemID = tonumber(string.match(link, "item:(%d+)"))
-    if itemID then
-        local current = (BT._currentCounts and BT._currentCounts[itemID]) or 0
-        local known = BT.knownItems[itemID] or 0
-        if current > known then
-            local overlay = GetOrCreateOverlay(slotFrame)
-            SetOverlayStyle(overlay, { r = 1.0, g = 0.5, b = 0.0, a = 1 }, { r = 1.0, g = 0.95, b = 0.6, a = 1 }, "N")
-            return
-        end
-    end
+	if tag == "S" then
+		SetOverlayStyle(overlay, { r = 0.53, g = 0.12, b = 0.77, a = 1 }, { r = 0.90, g = 0.60, b = 1.00, a = 1 }, "S")
+		return
+	elseif tag == "N" then
+		SetOverlayStyle(overlay, { r = 1.00, g = 0.50, b = 0.00, a = 1 }, { r = 1.00, g = 0.95, b = 0.60, a = 1 }, "N")
+		return
+	elseif tag == "A" then
+		if not BagTagsConfig.showAuction then
+			return
+		end
 
-    -- Pobierz ceny (zewnętrzne funkcje, bez zmian)
-    local ahPrice = 0
-    local deValue = 0
-    if itemName then
-        if Atr_GetAuctionPrice then
-            local ok, value = pcall(Atr_GetAuctionPrice, itemName)
-            if ok then ahPrice = value or 0 end
-        end
-        if Atr_GetDisenchantValue then
-            local ok, value = pcall(Atr_GetDisenchantValue, itemName)
-            if ok then deValue = value or 0 end
-        end
-    end
+		SetOverlayStyle(overlay, { r = 0.10, g = 1.00, b = 0.10, a = 1 }, { r = 0.40, g = 1.00, b = 0.40, a = 1 }, "A")
+		return
+	elseif tag == "D" then
+		if not BagTagsConfig.showDisenchant then
+			return
+		end
 
-    -- Prosta, jednoznaczna reguła wyboru taga:
-    -- 1) Porównaj trzech kandydatów: vendorPrice, netAhPrice (95%), deValue.
-    -- 2) Wybierz najwyższą efektywną wartość, z zastrzeżeniami:
-    --    - D można brać pod uwagę tylko gdy mamy enchanting i item jest Armor/Weapon i quality w [2,3].
-    --    - Pokazuj tylko te tagi, które są w ustawieniach (showAuction/showDisenchant/showVendor).
-    local netAh = (ahPrice or 0) * 0.95
-    local bestValue = vendorPrice or 0
-    local chosen = nil
+		SetOverlayStyle(overlay, { r = 0.80, g = 0.30, b = 0.80, a = 1 }, { r = 1.00, g = 0.50, b = 1.00, a = 1 }, "D")
+		return
+	elseif tag == "V" then
+		if not BagTagsConfig.showVendor then
+			return
+		end
 
-    -- Auction
-    if BagTagsConfig.showAuction and netAh > bestValue and netAh > 0 then
-        bestValue = netAh
-        chosen = "A"
-    end
-
-    -- Disenchant (tylko gdy sensowne)
-    if BagTagsConfig.showDisenchant and BT.hasEnchanting and (quality == 2 or quality == 3)
-       and (itemType == "Armor" or itemType == "Weapon")
-       and deValue > bestValue and deValue > 0 then
-        bestValue = deValue
-        chosen = "D"
-    end
-
-    -- Vendor fallback (wybierz Vendor gdy nic lepszego nie było)
-    if BagTagsConfig.showVendor and chosen == nil and vendorPrice > 0 then
-        chosen = "V"
-    end
-
-    -- Rysowanie prostych tagów
-    if chosen == "A" then
-        local overlay = GetOrCreateOverlay(slotFrame)
-        SetOverlayStyle(overlay, { r = 0.1, g = 1, b = 0.1, a = 1 }, { r = 0.4, g = 1, b = 0.4, a = 1 }, "A")
-        return
-    elseif chosen == "D" then
-        local overlay = GetOrCreateOverlay(slotFrame)
-        SetOverlayStyle(overlay, { r = 0.8, g = 0.3, b = 0.8, a = 1 }, { r = 1.0, g = 0.5, b = 1.0, a = 1 }, "D")
-        return
-    elseif chosen == "V" then
-        local overlay = GetOrCreateOverlay(slotFrame)
-        SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
-        return
-    end
-
-    -- Opcjonalny fallback: poor quality -> Vendor (jeśli włączone)
-    if quality == 0 and BagTagsConfig.showVendor then
-        local overlay = GetOrCreateOverlay(slotFrame)
-        SetOverlayStyle(overlay, { r = 0.9, g = 0.8, b = 0.2, a = 1 }, { r = 1.0, g = 0.9, b = 0.4, a = 1 }, "V")
-        return
-    end
+		SetOverlayStyle(overlay, { r = 0.90, g = 0.80, b = 0.20, a = 1 }, { r = 1.00, g = 0.90, b = 0.40, a = 1 }, "V")
+		return
+	end
 end
 
 function BT:FormatMoney(amount)
@@ -880,6 +753,293 @@ function BT:FormatMoney(amount)
 	end
 	return text
 end
+
+-- ===== Sell Vendor: functions & UI (REPLACE existing Sell Vendor block with this) =====
+
+-- Helper: rozpoznaje vendor tag przy użyciu BT:GetValueTag / BT:GetItemTag
+function BT:GetTagForSlot(bag, slot)
+	local ok, tag = pcall(self.GetValueTag, self, bag, slot)
+
+	if ok then
+		return tag
+	end
+
+	return nil
+end
+
+function BT:IsVendorTag(tag)
+	if not tag then
+		return false
+	end
+	if type(tag) ~= "string" then
+		return false
+	end
+	local t = tag:lower()
+	return t == "v" or t == "vendor"
+end
+
+-- Stack count helper (z BT:GetContainerItemInfo fallback na globalne API)
+function BT:GetStackCountAt(bag, slot)
+	if type(self.GetContainerItemInfo) == "function" then
+		local ok, texture, count = pcall(self.GetContainerItemInfo, self, bag, slot)
+		if ok then
+			return count or 1
+		end
+	end
+	local _, count = GetContainerItemInfo(bag, slot)
+	return count or 1
+end
+
+-- Liczy łączną wartość vendor (copper)
+function BT:ComputeVendorTotal()
+	local total = 0
+	local maxBag = 4
+	for bag = 0, maxBag do
+		local slots = (type(self.GetContainerNumSlots) == "function" and self:GetContainerNumSlots(bag))
+			or GetContainerNumSlots(bag)
+			or 0
+		if slots and slots > 0 then
+			for slot = 1, slots do
+				local link = (
+					type(self.SafeGetContainerItemLink) == "function" and self:SafeGetContainerItemLink(bag, slot)
+				) or GetContainerItemLink(bag, slot)
+				if link then
+					local tag = self:GetTagForSlot(bag, slot)
+					if self:IsVendorTag(tag) then
+						local _, _, _, _, _, _, _, _, _, _, vendorPrice = GetItemInfo(link)
+						vendorPrice = vendorPrice or 0
+						local stack = self:GetStackCountAt(bag, slot) or 1
+						total = total + (vendorPrice * stack)
+					end
+				end
+			end
+		end
+	end
+	return total
+end
+
+-- Kolejka sprzedaży: z BT.VendorSellQueue i BT.VendorSellFrame
+function BT:StartVendorSellQueue()
+	if not MerchantFrame or not MerchantFrame:IsShown() then
+		UIErrorsFrame:AddMessage("Open a merchant first to sell items.")
+		return
+	end
+
+	if not self.VendorSellQueue or #self.VendorSellQueue == 0 then
+		UIErrorsFrame:AddMessage("No vendor-tagged items found.")
+		return
+	end
+
+	self.VendorSelling = true
+	self.VendorSellTimer = 0
+	self.VendorSellFrame = self.VendorSellFrame or CreateFrame("Frame")
+	local interval = 0.12
+
+	self.VendorSellFrame:SetScript("OnUpdate", function(frame, elapsed)
+		self.VendorSellTimer = self.VendorSellTimer + elapsed
+		if self.VendorSellTimer >= interval then
+			self.VendorSellTimer = 0
+			local entry = table.remove(self.VendorSellQueue, 1)
+			if not entry then
+				frame:SetScript("OnUpdate", nil)
+				self.VendorSelling = false
+				return
+			end
+			-- verify item still exists in slot
+			local currentLink = (
+				type(self.SafeGetContainerItemLink) == "function"
+				and self:SafeGetContainerItemLink(entry.bag, entry.slot)
+			) or GetContainerItemLink(entry.bag, entry.slot)
+			if currentLink then
+				UseContainerItem(entry.bag, entry.slot)
+			end
+		end
+	end)
+end
+
+-- Create / ensure Sell button exists and register events
+function BT:CreateSellVendorButton()
+	if self.SellVendorBtn and self.SellVendorBtn.Create then
+		return
+	end
+
+	-- choose parent: InventoryModule.frame -> BT.Frame -> ContainerFrame1 -> UIParent
+	local parentForButton = (self.InventoryModule and self.InventoryModule.mainFrame)
+		or self.Frame
+		or _G["ContainerFrame1"]
+		or UIParent
+
+	local btn = CreateFrame("Button", "BagTags_SellVendorBtn", parentForButton, "UIPanelButtonTemplate")
+	btn:ClearAllPoints()
+	btn:SetSize(170, 22)
+	btn:SetPoint("TOPRIGHT", parentForButton, "TOPRIGHT", -15, -58)
+	btn:SetText(("Vendor (%s)"):format(self:FormatMoney(total)))
+	btn:Hide()
+
+	local nt = btn:GetNormalTexture()
+
+	if nt then
+		nt:SetVertexColor(0.20, 0.20, 0.20)
+	end
+
+	local pt = btn:GetPushedTexture()
+
+	if pt then
+		pt:SetVertexColor(0.35, 0.35, 0.35)
+	end
+
+	local ht = btn:GetHighlightTexture()
+
+	if ht then
+		ht:SetVertexColor(1.0, 0.85, 0.1)
+	end
+
+	-- frame level/strata to avoid being hidden under other UI
+	if parentForButton and type(parentForButton.GetFrameLevel) == "function" then
+		btn:SetFrameLevel(parentForButton:GetFrameLevel() + 5)
+	end
+	if parentForButton and type(parentForButton.GetFrameStrata) == "function" then
+		btn:SetFrameStrata(parentForButton:GetFrameStrata())
+	end
+
+	-- OnClick: build queue and start selling
+	btn:SetScript("OnClick", function()
+		if not MerchantFrame or not MerchantFrame:IsShown() then
+			UIErrorsFrame:AddMessage("Open a merchant first to sell items.")
+			return
+		end
+		self.VendorSellQueue = {}
+		local maxBag = 4
+		for bag = 0, maxBag do
+			local slots = (type(self.GetContainerNumSlots) == "function" and self:GetContainerNumSlots(bag))
+				or GetContainerNumSlots(bag)
+				or 0
+			if slots and slots > 0 then
+				for slot = 1, slots do
+					local link = (
+						type(self.SafeGetContainerItemLink) == "function" and self:SafeGetContainerItemLink(bag, slot)
+					) or GetContainerItemLink(bag, slot)
+					if link then
+						local tag = self:GetTagForSlot(bag, slot)
+						if self:IsVendorTag(tag) then
+							table.insert(self.VendorSellQueue, { bag = bag, slot = slot, link = link })
+						end
+					end
+				end
+			end
+		end
+
+		if self.VendorSellQueue and #self.VendorSellQueue > 0 then
+			self:StartVendorSellQueue()
+		else
+			UIErrorsFrame:AddMessage("No vendor-tagged items found.")
+		end
+	end)
+
+	-- expose button reference
+	self.SellVendorBtn = btn
+
+	-- events: aktualizuj przycisk przy zmianach
+	local ev = CreateFrame("Frame")
+	ev:RegisterEvent("BAG_UPDATE")
+	ev:RegisterEvent("BAG_UPDATE_DELAYED")
+	ev:RegisterEvent("PLAYER_ENTERING_WORLD")
+	ev:RegisterEvent("MERCHANT_SHOW")
+	ev:RegisterEvent("MERCHANT_CLOSED")
+
+	ev:SetScript("OnEvent", function(_, event, ...)
+		if event == "MERCHANT_SHOW" then
+			-- po otwarciu mercanta przycisk może się aktywować
+			C_Timer.After(0.03, function()
+				if type(self.UpdateSellButton) == "function" then
+					self:UpdateSellButton()
+				end
+			end)
+		elseif event == "MERCHANT_CLOSED" then
+			-- przerwij ewentualną sprzedaż
+			self.VendorSellQueue = {}
+			if self.VendorSellFrame then
+				self.VendorSellFrame:SetScript("OnUpdate", nil)
+			end
+			if type(self.UpdateSellButton) == "function" then
+				self:UpdateSellButton()
+			end
+		else
+			-- debounce drobnego opóźnienia aby GetItemInfo mógł zaktualizować
+			C_Timer.After(0.06, function()
+				if type(self.UpdateSellButton) == "function" then
+					self:UpdateSellButton()
+				end
+			end)
+		end
+	end)
+
+	-- hook parent show/hide if available (ustawienie pozycji i refresh)
+	if
+		parentForButton
+		and type(parentForButton.IsObjectType) == "function"
+		and parentForButton:IsObjectType("Frame")
+	then
+		parentForButton:HookScript("OnShow", function()
+			C_Timer.After(0.02, function()
+				if type(self.UpdateSellButton) == "function" then
+					self:UpdateSellButton()
+				end
+			end)
+		end)
+		parentForButton:HookScript("OnHide", function()
+			if self.SellVendorBtn then
+				self.SellVendorBtn:Hide()
+			end
+		end)
+	end
+end
+
+-- UpdateSellButton: pokazuje/ukrywa i ustawia tekst z sumą
+function BT:UpdateSellButton()
+
+    local mod = self.InventoryModule
+
+    if not mod then
+        return
+    end
+
+    if not mod.vendorBar then
+        return
+    end
+
+    local total = self:ComputeVendorTotal()
+
+if total <= 0 then
+
+    mod.vendorBar.text:SetText("")
+    mod.vendorBar:Hide()
+
+    return
+end
+
+    mod.vendorBar.text:SetText(
+        "|cffFFD700[V]|r " .. self:FormatMoney(total)
+    )
+
+    mod.vendorBar:Show()
+end
+
+-- Expose for other modules
+BT.UpdateSellButton = BT.UpdateSellButton or BT.UpdateSellButton -- ensure reference exists after load
+
+-- Safe initial delayed refresh (replace any bare C_Timer.After(1, UpdateSellButton) calls)
+C_Timer.After(1, function()
+	if type(BT.UpdateSellButton) == "function" then
+		BT:UpdateSellButton()
+	end
+end)
+
+-- ===== end Sell Vendor block =====
+
+-- =======================================================================
+-- KONIEC: Sell Vendor block
+-- =======================================================================
 
 local overlayEvents = CreateFrame("Frame")
 overlayEvents:RegisterEvent("BAG_UPDATE")
@@ -987,196 +1147,227 @@ SlashCmdList["BAGTAGS"] = function(msg)
 	print("/bagtags show <itemID>        — pokaż current/known dla itemID")
 end
 
--- Sell Vendor button - dopasowane do BT API (BT:GetValueTag)
-local DEBUG = true
-local NUM_BAG_SLOTS_MAX = 4 -- dostosuj jeśli masz inne baki
+function BT:GetVendorItems()
+	local data = {
+		items = {},
+		count = 0,
+		value = 0,
+	}
 
-local function Log(msg)
-  if DEBUG and DEFAULT_CHAT_FRAME then
-    DEFAULT_CHAT_FRAME:AddMessage("|cFF33FF99BagTagsSell:|r " .. tostring(msg))
-  end
+	if self.BuildCurrentItemCounts then
+		self:BuildCurrentItemCounts()
+	end
+
+	for bag = 0, 4 do
+		local numSlots = self:GetContainerNumSlots(bag)
+
+		for slot = 1, numSlots do
+			local link = self:GetContainerItemLink(bag, slot)
+
+			if link then
+				local _, _, _, _, _, _, _, _, _, _, vendorPrice = GetItemInfo(link)
+				vendorPrice = vendorPrice or 0
+
+				if vendorPrice > 0 and self:GetValueTag(bag, slot) == "V" then
+					local _, stackCount = self:GetContainerItemInfo(bag, slot)
+
+					stackCount = stackCount or 1
+
+					table.insert(data.items, {
+						bag = bag,
+						slot = slot,
+					})
+
+					data.count = data.count + 1
+					data.value = data.value + (vendorPrice * stackCount)
+				end
+			end
+		end
+	end
+
+	return data
 end
 
--- Odczyt taga — najpierw BT:GetValueTag, potem fallbacky
-local function GetTagForSlot(bag, slot)
-  local link = nil
-  if BT and type(BT.SafeGetContainerItemLink) == "function" then
-    link = BT:SafeGetContainerItemLink(bag, slot)
-  else
-    link = GetContainerItemLink(bag, slot)
-  end
+function BT:SellVendorItems()
+	local cache = self:GetVendorItems()
 
-  -- 1) preferuj BT:GetValueTag jeśli dostępne
-  if BT and type(BT.GetValueTag) == "function" then
-    local ok, tag = pcall(BT.GetValueTag, BT, bag, slot)
-    if ok and tag then return tag end
-  end
+	if not cache or cache.count == 0 then
+		UIErrorsFrame:AddMessage("No vendor items found.")
+		return
+	end
 
-  -- 2) jeśli istnieje metoda BT.GetTag (rzadko), spróbuj
-  if BT and type(BT.GetTag) == "function" then
-    local ok, tag = pcall(BT.GetTag, BT, bag, slot)
-    if ok and tag then return tag end
-  end
+	local sold = 0
+	local earned = 0
 
-  -- 3) fallback: BagTags global (stare nazwisko)
-  if BagTags then
-    -- możliwe API BagTags:GetTag / GetItemTag / tags table
-    local try = function(fn, ...)
-      if type(fn) == "function" then
-        local ok, res = pcall(fn, ...)
-        if ok and res then return res end
-      end
-      return nil
-    end
+	for _, item in ipairs(cache.items) do
+		local link = self:GetContainerItemLink(item.bag, item.slot)
 
-    local tag = try(function(...) return BagTags.GetTag and BagTags.GetTag(BagTags, ...) end, bag, slot)
-    if tag then return tag end
-    tag = try(BagTags.GetItemTag, link)
-    if tag then return tag end
+		if link then
+			local _, count = self:GetContainerItemInfo(item.bag, item.slot)
 
-    if link then
-      local itemId = tonumber(link:match("item:(%d+):"))
-      if itemId then
-        if BagTags.tags and BagTags.tags[itemId] then return BagTags.tags[itemId] end
-        if BagTags.items and BagTags.items[itemId] and BagTags.items[itemId].tag then return BagTags.items[itemId].tag end
-        if BagTags.db and BagTags.db.global and BagTags.db.global.tags and BagTags.db.global.tags[itemId] then
-          return BagTags.db.global.tags[itemId]
-        end
-      end
-    end
-  end
+			count = count or 1
 
-  return nil
+			local vendorPrice = select(11, GetItemInfo(link)) or 0
+
+			earned = earned + (vendorPrice * count)
+
+			if C_Container and C_Container.UseContainerItem then
+				C_Container.UseContainerItem(item.bag, item.slot)
+			else
+				UseContainerItem(item.bag, item.slot)
+			end
+
+			sold = sold + 1
+		end
+	end
+
+DEFAULT_CHAT_FRAME:AddMessage(
+		string.format(
+			"|cff00ffcc[BagTags]|r Sold %d vendor items for %s",
+			sold,
+			self:FormatMoney(earned)
+		)
+	)
+
+	C_Timer.After(0.25, function()
+		if BT.BuildCurrentItemCounts then
+			BT:BuildCurrentItemCounts()
+		end
+
+		if BT.UpdateSellButton then
+			BT:UpdateSellButton()
+		end
+
+		if BT.InventoryModule and BT.InventoryModule.UpdateLayout then
+			BT.InventoryModule:UpdateLayout()
+		end
+	end)
+
+	return sold, earned
 end
 
-local function IsVendorTag(tag)
-  if not tag then return false end
-  if type(tag) == "string" then
-    local t = tag:lower()
-    return t == "v" or t == "vendor"
-  end
-  return false
+BT.ItemCache = BT.ItemCache or {}
+
+function BT:GetItemData(link)
+	if not link then
+		return nil
+	end
+
+	local cached = self.ItemCache[link]
+
+	if cached then
+		return cached
+	end
+
+	local name, _, quality, level, reqLevel, itemType, itemSubType, stackSize, equipLoc, icon, vendorPrice =
+		GetItemInfo(link)
+
+	cached = {
+		name = name,
+		quality = quality or 0,
+		level = level or 0,
+		reqLevel = reqLevel or 0,
+		itemType = itemType,
+		itemSubType = itemSubType,
+		stackSize = stackSize or 1,
+		equipLoc = equipLoc,
+		icon = icon,
+		vendorPrice = vendorPrice or 0,
+	}
+
+	self.ItemCache[link] = cached
+
+	return cached
 end
 
-local function ScanForVendorItems()
-  local found = {}
-  for bag = 0, NUM_BAG_SLOTS_MAX do
-    local slots = GetContainerNumSlots(bag)
-    if slots and slots > 0 then
-      for slot = 1, slots do
-        local link = (BT and type(BT.SafeGetContainerItemLink) == "function") and BT:SafeGetContainerItemLink(bag, slot) or GetContainerItemLink(bag, slot)
-        if link then
-          local tag = GetTagForSlot(bag, slot)
-          if IsVendorTag(tag) then
-            table.insert(found, {bag=bag, slot=slot, link=link, tag=tag})
-          else
-            if DEBUG then
-              Log(("slot %d:%d tag=%s link=%s"):format(bag, slot, tostring(tag), link))
-            end
-          end
-        end
-      end
-    end
-  end
-  return found
+function BT:GetBestValueTag(bag, slot)
+	local link = self:SafeGetContainerItemLink(bag, slot)
+
+	if not link then
+		return nil, 0
+	end
+
+	local item = nil
+
+	if self.GetItemData then
+		item = self:GetItemData(link)
+	end
+
+	local itemName
+	local quality
+	local itemType
+	local vendorPrice
+
+	if item then
+		itemName = item.name
+		quality = item.quality
+		itemType = item.itemType
+		vendorPrice = item.vendorPrice
+	else
+		itemName, _, quality, _, _, itemType, _, _, _, _, vendorPrice = GetItemInfo(link)
+		quality = quality or 0
+		vendorPrice = vendorPrice or 0
+	end
+
+	if self:IsItemSoulbound(bag, slot) then
+		return "S", vendorPrice
+	end
+
+	if not self._currentCounts then
+		self:BuildCurrentItemCounts()
+	end
+
+	local itemID = tonumber(string.match(link, "item:(%d+)"))
+
+	if itemID then
+		local current = (self._currentCounts and self._currentCounts[itemID]) or 0
+		local known = self.knownItems[itemID] or 0
+
+		if current > known then
+			return "N", vendorPrice
+		end
+	end
+
+	local ahPrice = 0
+	local deValue = 0
+
+	if itemName then
+		if Atr_GetAuctionPrice then
+			local ok, value = pcall(Atr_GetAuctionPrice, itemName)
+
+			if ok then
+				ahPrice = value or 0
+			end
+		end
+
+		if Atr_GetDisenchantValue then
+			local ok, value = pcall(Atr_GetDisenchantValue, itemName)
+
+			if ok then
+				deValue = value or 0
+			end
+		end
+	end
+
+	local netAh = ahPrice * 0.95
+
+	local bestValue = vendorPrice
+	local bestTag = "V"
+
+	if netAh > bestValue then
+		bestValue = netAh
+		bestTag = "A"
+	end
+
+	if
+		self.hasEnchanting
+		and (quality == 2 or quality == 3)
+		and (itemType == "Armor" or itemType == "Weapon")
+		and deValue > bestValue
+	then
+		bestValue = deValue
+		bestTag = "D"
+	end
+
+	return bestTag, bestValue
 end
-
--- UI: przycisk
-local sellBtn = CreateFrame("Button", "BagTags_SellVendorBtn", UIParent, "UIPanelButtonTemplate")
-sellBtn:SetSize(130, 22)
-sellBtn:SetPoint("CENTER", UIParent, "CENTER", 0, -200) -- dopasuj parent/pozycję do BagTagsFrame
-sellBtn:SetText("Sell Vendor")
-sellBtn:Hide()
-
--- Kolejka sprzedaży
-local sellQueue = {}
-local sellFrame = CreateFrame("Frame")
-local sellInterval = 0.15
-local sellTimer = 0
-
-local function StartSellingQueue()
-  if not MerchantFrame or not MerchantFrame:IsShown() then
-    UIErrorsFrame:AddMessage("Open a merchant first to sell items.")
-    Log("Merchant not open - cannot start selling")
-    return
-  end
-  if #sellQueue == 0 then
-    Log("Brak itemów do sprzedaży w kolejce")
-    return
-  end
-  sellTimer = 0
-  sellFrame:SetScript("OnUpdate", function(self, elapsed)
-    sellTimer = sellTimer + elapsed
-    if sellTimer >= sellInterval then
-      sellTimer = 0
-      local entry = table.remove(sellQueue, 1)
-      if entry then
-        local currentLink = (BT and type(BT.SafeGetContainerItemLink) == "function") and BT:SafeGetContainerItemLink(entry.bag, entry.slot) or GetContainerItemLink(entry.bag, entry.slot)
-        if currentLink then
-          UseContainerItem(entry.bag, entry.slot)
-          Log(("Selling %s from %d:%d"):format(entry.link, entry.bag, entry.slot))
-        else
-          Log(("Item nie istnieje już w %d:%d"):format(entry.bag, entry.slot))
-        end
-      else
-        sellFrame:SetScript("OnUpdate", nil)
-        Log("Koniec sprzedaży")
-      end
-    end
-  end)
-end
-
-sellBtn:SetScript("OnClick", function()
-  if not MerchantFrame or not MerchantFrame:IsShown() then
-    UIErrorsFrame:AddMessage("Open a merchant first to sell items.")
-    return
-  end
-  sellQueue = {}
-  local found = ScanForVendorItems()
-  for _,e in ipairs(found) do table.insert(sellQueue, e) end
-  if #sellQueue > 0 then
-    StartSellingQueue()
-  else
-    UIErrorsFrame:AddMessage("No vendor-tagged items found.")
-  end
-end)
-
--- Widoczność kontrola
-local function UpdateSellButtonVisibility()
-  local found = ScanForVendorItems()
-  if #found > 0 then
-    sellBtn:Show()
-    if MerchantFrame and MerchantFrame:IsShown() then
-      sellBtn:Enable()
-    else
-      sellBtn:Disable()
-    end
-    Log(("Znaleziono %d itemów z tagiem V"):format(#found))
-  else
-    sellBtn:Hide()
-    Log("Nie znaleziono itemów z tagiem V")
-  end
-end
-
--- Eventy
-local ev = CreateFrame("Frame")
-ev:RegisterEvent("BAG_UPDATE")
-ev:RegisterEvent("BAG_UPDATE_DELAYED")
-ev:RegisterEvent("PLAYER_ENTERING_WORLD")
-ev:RegisterEvent("MERCHANT_SHOW")
-ev:RegisterEvent("MERCHANT_CLOSED")
-
-ev:SetScript("OnEvent", function(self, event, ...)
-  if event == "MERCHANT_SHOW" then
-    sellBtn:Enable()
-    UpdateSellButtonVisibility()
-  elseif event == "MERCHANT_CLOSED" then
-    sellBtn:Disable()
-    sellQueue = {}
-    sellFrame:SetScript("OnUpdate", nil)
-  else
-    UpdateSellButtonVisibility()
-  end
-end)
-
-C_Timer.After(1, UpdateSellButtonVisibility)

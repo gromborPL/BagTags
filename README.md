@@ -227,6 +227,21 @@ BagTags
 
 # 📋 Changelog
 
+## Changelog v1.1
+
+Inventory Window
+* Optimized the overlay refresh process in the inventory module by removing redundant operations.
+
+Item Interaction & Sell Actions
+* Added a comprehensive item valuation system (`GetBestValueTag`) taking into account binding status, new items, auction house, disenchanting, and vendor value.
+* Introduced queuing and automated selling support for items marked for the vendor (`SellVendorItems` and `StartVendorSellQueue`).
+* Added a module for calculating the cumulative vendor value of items, accounting for stack counts.
+* Added a quick vendor sell button with dynamic currency formatting and trade event handling.
+
+Compatibility & Stability
+* Added safe helper functions (`SafeGetContainerItemInfo`, `SafeGetContainerItemLink`) utilizing error-protected procedures.
+* Implemented an inventory state monitoring and handling system as well as item data caching to improve performance.
+
 ## Version 1.0.1
 
 ### Inventory Window

@@ -7,3 +7,4 @@
 
 BagTags.lua
 BagTags_Inventory.lua
+BagTags_Merchant.lua
